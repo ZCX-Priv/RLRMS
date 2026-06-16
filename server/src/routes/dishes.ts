@@ -106,7 +106,7 @@ dishesRouter.get('/search/query', (req, res) => {
       return res.json({ success: true, data: [] })
     }
     
-    const dishes = all<{
+    const rawDishes = all<{
       id: string
       name: string
       price: number
@@ -114,13 +114,21 @@ dishesRouter.get('/search/query', (req, res) => {
       category_id: string | null
       category_name: string | null
       status: string
+      tags: string
+      specs: string
     }>(`
-      SELECT d.id, d.name, d.price, d.image_url, d.category_id, c.name as category_name, d.status
+      SELECT d.id, d.name, d.price, d.image_url, d.category_id, c.name as category_name, d.status, d.tags, d.specs
       FROM dishes d 
       LEFT JOIN categories c ON d.category_id = c.id 
       WHERE d.status = 'on_sale' AND d.name LIKE ?
       ORDER BY d.name
     `, [`%${q}%`])
+    
+    const dishes = rawDishes.map(dish => ({
+      ...dish,
+      tags: JSON.parse(dish.tags || '[]'),
+      specs: JSON.parse(dish.specs || '[]'),
+    }))
     
     res.json({ success: true, data: dishes })
   } catch (error) {

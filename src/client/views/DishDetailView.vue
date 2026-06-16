@@ -124,7 +124,7 @@ onMounted(() => {
         <div class="dish-content">
           <div class="dish-header">
             <h2 class="dish-name">{{ dish.name }}</h2>
-            <div class="dish-tags" v-if="dish.tags.length > 0">
+            <div class="dish-tags" v-if="dish.tags?.length">
               <span v-for="tag in dish.tags" :key="tag" class="tag">{{ tag }}</span>
             </div>
           </div>

@@ -110,7 +110,7 @@ function handleUpdateQuantity(quantity: number) {
       <div v-if="!dish.image_url" class="dish-image-placeholder">
         <span>{{ dish.name.charAt(0) }}</span>
       </div>
-      <div v-if="dish.tags.length > 0" class="dish-tags">
+      <div v-if="dish.tags?.length" class="dish-tags">
         <span v-for="tag in dish.tags.slice(0, 2)" :key="tag" class="dish-tag">
           {{ tag }}
         </span>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
@@ -33,7 +33,7 @@ async function saveHistory(query: string) {
   const history = searchHistory.value.filter(h => h !== query)
   history.unshift(query)
   searchHistory.value = history.slice(0, 10)
-  await setItem(SEARCH_HISTORY_KEY, searchHistory.value)
+  await setItem(SEARCH_HISTORY_KEY, toRaw(searchHistory.value))
 }
 
 function clearHistory() {
@@ -48,7 +48,7 @@ async function confirmClearHistory() {
 
 async function removeHistoryItem(index: number) {
   searchHistory.value.splice(index, 1)
-  await setItem(SEARCH_HISTORY_KEY, searchHistory.value)
+  await setItem(SEARCH_HISTORY_KEY, toRaw(searchHistory.value))
 }
 
 async function handleSearch() {
