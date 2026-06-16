@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { execSync } from 'child_process'
 import express from 'express'
+import type { Express } from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import compression from 'compression'
@@ -18,102 +19,108 @@ if (process.platform === 'win32') {
   process.stderr.setDefaultEncoding?.('utf8')
 }
 
-const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT || 3000
 
 const isProduction = process.env.NODE_ENV === 'production'
 
 let dbReady = false
 let dbInitPromise: Promise<void> | null = null
 
-const corsOptions = {
-  origin: isProduction ? process.env.FRONTEND_URL : 'http://localhost:5173',
-  credentials: true,
-}
+/**
+ * 创建并配置 Express 应用实例
+ * 生产环境和开发环境（Vite 中间件模式）共用
+ */
+export function createApp(): Express {
+  const app = express()
 
-app.use(cors(corsOptions))
-app.use(cookieParser())
-app.use(compression({
-  threshold: 1024,
-  level: 6,
-}))
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
-
-app.use((req, res, next) => {
-  if (!dbReady && req.path !== '/health') {
-    res.status(503).json({ 
-      success: false, 
-      error: 'Service unavailable - database initializing',
-      retryAfter: 2
-    })
-    return
+  // 生产环境启用 CORS（开发环境前后端同源，无需 CORS）
+  if (isProduction) {
+    app.use(cors({
+      origin: process.env.FRONTEND_URL,
+      credentials: true,
+    }))
   }
-  next()
-})
 
-app.use('/sources', express.static(resolve(process.cwd(), 'public/sources'), {
-  maxAge: '7d',
-  etag: true,
-  lastModified: true,
-}))
+  app.use(cookieParser())
+  app.use(compression({
+    threshold: 1024,
+    level: 6,
+  }))
+  app.use(express.json())
+  app.use(express.urlencoded({ extended: true }))
 
-app.use('/api', apiRouter)
+  app.use((req, res, next) => {
+    if (!dbReady && req.path !== '/health') {
+      res.status(503).json({ 
+        success: false, 
+        error: 'Service unavailable - database initializing',
+        retryAfter: 2
+      })
+      return
+    }
+    next()
+  })
 
-if (isProduction) {
-  const distPath = resolve(process.cwd(), 'dist')
-  app.use(express.static(distPath, {
-    maxAge: '1d',
+  app.use('/sources', express.static(resolve(process.cwd(), 'public/sources'), {
+    maxAge: '7d',
     etag: true,
     lastModified: true,
   }))
-  
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/sources')) {
-      return next()
+
+  app.use('/api', apiRouter)
+
+  app.get('/health', (req, res) => {
+    res.json({ 
+      status: dbReady ? 'ok' : 'initializing', 
+      timestamp: new Date().toISOString(),
+      dbReady
+    })
+  })
+
+  // 生产环境：托管前端构建产物 + SPA fallback
+  if (isProduction) {
+    const distPath = resolve(process.cwd(), 'dist')
+    app.use(express.static(distPath, {
+      maxAge: '1d',
+      etag: true,
+      lastModified: true,
+    }))
+    
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/sources')) {
+        return next()
+      }
+      res.sendFile(resolve(distPath, 'index.html'))
+    })
+  }
+
+  app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('Error:', err.message)
+    console.error('Stack:', err.stack)
+    
+    if (err.name === 'UnauthorizedError') {
+      res.status(401).json({ success: false, error: 'Invalid token' })
+      return
     }
-    res.sendFile(resolve(distPath, 'index.html'))
+    
+    if (err.name === 'ValidationError') {
+      res.status(400).json({ success: false, error: err.message })
+      return
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message 
+    })
   })
+
+  return app
 }
 
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: dbReady ? 'ok' : 'initializing', 
-    timestamp: new Date().toISOString(),
-    dbReady
-  })
-})
-
-if (!isProduction) {
-  app.use((req, res) => {
-    res.status(404).json({ success: false, error: 'Not found' })
-  })
-}
-
-app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Error:', err.message)
-  console.error('Stack:', err.stack)
-  
-  if (err.name === 'UnauthorizedError') {
-    return res.status(401).json({ success: false, error: 'Invalid token' })
-  }
-  
-  if (err.name === 'ValidationError') {
-    return res.status(400).json({ success: false, error: err.message })
-  }
-  
-  res.status(500).json({ 
-    success: false, 
-    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message 
-  })
-})
-
-async function startServer() {
-  const server = app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`)
-    console.log('Database initialization in progress...')
-  })
-
+/**
+ * 初始化数据库并标记就绪状态
+ */
+export function initDb(server: ReturnType<Express['listen']>) {
   dbInitPromise = initializeDatabase()
     .then(() => {
       dbReady = true
@@ -128,4 +135,12 @@ async function startServer() {
     })
 }
 
-startServer()
+// 生产环境：直接启动服务器
+if (isProduction) {
+  const app = createApp()
+  const server = app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`)
+    console.log('Database initialization in progress...')
+  })
+  initDb(server)
+}

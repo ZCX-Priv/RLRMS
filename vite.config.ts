@@ -37,13 +37,8 @@ export default defineConfig(({ mode }) => ({
     },
   },
   server: {
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-    },
+    // 端口由 Express 统一控制（Vite 中间件模式）
+    // 此配置仅在独立运行 Vite 时生效
   },
   build: {
     // 代码分割策略

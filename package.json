@@ -4,13 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:client": "vite",
-    "dev:server": "tsx watch server/src/index.ts",
+    "dev": "tsx watch server/src/dev.ts",
     "build": "vue-tsc -b && vite build",
     "build:server": "tsc -p server/tsconfig.json",
     "build:production": "node scripts/build-production.mjs",
-    "preview": "vite preview",
     "start": "node server/dist/index.js",
     "start:production": "cross-env NODE_ENV=production node server/dist/index.js",
     "db:init": "tsx server/src/db/init.ts"
@@ -55,7 +52,6 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-vue": "^6.0.2",
     "@vue/tsconfig": "^0.8.1",
-    "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "lucide-vue-next": "^0.468.0",
     "tsx": "^4.19.2",
