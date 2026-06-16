@@ -357,6 +357,29 @@ adminRouter.post('/dishes', requireAuth, (req, res) => {
   }
 })
 
+// ===== Reorder Dishes (must be before /:id routes) =====
+
+adminRouter.put('/dishes/reorder', requireAuth, (req, res) => {
+  try {
+    const { orders } = req.body as { orders: { id: string; sort_order: number }[] }
+    
+    if (!Array.isArray(orders)) {
+      return res.status(400).json({ success: false, error: 'Invalid orders data' })
+    }
+    
+    beginBatch()
+    for (const item of orders) {
+      run('UPDATE dishes SET sort_order = ? WHERE id = ?', [item.sort_order, item.id])
+    }
+    endBatch()
+    
+    res.json({ success: true, message: 'Dishes reordered' })
+  } catch (error) {
+    console.error('Error reordering dishes:', error)
+    res.status(500).json({ success: false, error: 'Failed to reorder dishes' })
+  }
+})
+
 adminRouter.put('/dishes/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
@@ -438,27 +461,6 @@ adminRouter.delete('/dishes/:id', requireAuth, (req, res) => {
   } catch (error) {
     console.error('Error deleting dish:', error)
     res.status(500).json({ success: false, error: 'Failed to delete dish' })
-  }
-})
-
-adminRouter.put('/dishes/reorder', requireAuth, (req, res) => {
-  try {
-    const { orders } = req.body as { orders: { id: string; sort_order: number }[] }
-    
-    if (!Array.isArray(orders)) {
-      return res.status(400).json({ success: false, error: 'Invalid orders data' })
-    }
-    
-    beginBatch()
-    for (const item of orders) {
-      run('UPDATE dishes SET sort_order = ? WHERE id = ?', [item.sort_order, item.id])
-    }
-    endBatch()
-    
-    res.json({ success: true, message: 'Dishes reordered' })
-  } catch (error) {
-    console.error('Error reordering dishes:', error)
-    res.status(500).json({ success: false, error: 'Failed to reorder dishes' })
   }
 })
 
@@ -666,6 +668,29 @@ adminRouter.post('/inventory', requireAuth, (req, res) => {
   }
 })
 
+// ===== Reorder Inventory (must be before /:id routes) =====
+
+adminRouter.put('/inventory/reorder', requireAuth, (req, res) => {
+  try {
+    const { orders } = req.body as { orders: { id: string; sort_order: number }[] }
+    
+    if (!Array.isArray(orders)) {
+      return res.status(400).json({ success: false, error: 'Invalid orders data' })
+    }
+    
+    beginBatch()
+    for (const item of orders) {
+      run('UPDATE inventory SET sort_order = ? WHERE id = ?', [item.sort_order, item.id])
+    }
+    endBatch()
+    
+    res.json({ success: true, message: 'Inventory reordered' })
+  } catch (error) {
+    console.error('Error reordering inventory:', error)
+    res.status(500).json({ success: false, error: 'Failed to reorder inventory' })
+  }
+})
+
 adminRouter.put('/inventory/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
@@ -689,27 +714,6 @@ adminRouter.delete('/inventory/:id', requireAuth, (req, res) => {
   } catch (error) {
     console.error('Error deleting inventory:', error)
     res.status(500).json({ success: false, error: 'Failed to delete inventory item' })
-  }
-})
-
-adminRouter.put('/inventory/reorder', requireAuth, (req, res) => {
-  try {
-    const { orders } = req.body as { orders: { id: string; sort_order: number }[] }
-    
-    if (!Array.isArray(orders)) {
-      return res.status(400).json({ success: false, error: 'Invalid orders data' })
-    }
-    
-    beginBatch()
-    for (const item of orders) {
-      run('UPDATE inventory SET sort_order = ? WHERE id = ?', [item.sort_order, item.id])
-    }
-    endBatch()
-    
-    res.json({ success: true, message: 'Inventory reordered' })
-  } catch (error) {
-    console.error('Error reordering inventory:', error)
-    res.status(500).json({ success: false, error: 'Failed to reorder inventory' })
   }
 })
 
