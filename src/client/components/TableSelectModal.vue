@@ -76,11 +76,6 @@ function handleConfirm() {
   }
 }
 
-function handleCancel() {
-  selectedTableId.value = tableStore.selectedTable?.id || null
-  emit('update:show', false)
-}
-
 onMounted(() => {
   fetchTables()
   selectedTableId.value = tableStore.selectedTable?.id || null
@@ -92,7 +87,7 @@ onMounted(() => {
     :show="show"
     title="请选择桌位"
     size="md"
-    @close="handleCancel"
+    :closable="false"
   >
     <div class="table-grid">
       <button
@@ -134,7 +129,6 @@ onMounted(() => {
     </div>
 
     <template #footer>
-      <button class="btn btn-secondary" @click="handleCancel">取消</button>
       <button
         class="btn btn-primary"
         :disabled="!selectedTableId"

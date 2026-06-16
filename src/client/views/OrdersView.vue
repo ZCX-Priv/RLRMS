@@ -3,12 +3,14 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
+import { useClientAuthStore } from '@/stores/clientAuth'
 import type { Order } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import { ChevronRight } from 'lucide-vue-next'
 
 const router = useRouter()
 const appStore = useAppStore()
+const clientAuthStore = useClientAuthStore()
 
 const orders = ref<Order[]>([])
 const loading = ref(true)
@@ -37,7 +39,8 @@ async function fetchOrders() {
     if (!initialized.value) {
       loading.value = true
     }
-    const res = await api.getOrders()
+    const phone = clientAuthStore.user?.phone || undefined
+    const res = await api.getOrders(phone)
     orders.value = res.data
     initialized.value = true
   } catch (error) {

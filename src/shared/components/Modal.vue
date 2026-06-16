@@ -32,7 +32,7 @@ function handleClose() {
 }
 
 function handleBackdropClick(e: MouseEvent) {
-  if (e.target === e.currentTarget) {
+  if (e.target === e.currentTarget && props.closable) {
     handleClose()
   }
 }

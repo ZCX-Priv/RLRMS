@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
+import { useClientAuthStore } from '@/stores/clientAuth'
 import { clear as clearIndexedDB } from '@/utils/storage'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import Modal from '@/shared/components/Modal.vue'
-import { Sun, Moon, ChevronRight, Info, Trash2 } from 'lucide-vue-next'
+import { Sun, Moon, ChevronRight, Info, Trash2, CircleUser, LogOut } from 'lucide-vue-next'
 
+const router = useRouter()
 const appStore = useAppStore()
+const clientAuthStore = useClientAuthStore()
 
 const showAboutModal = ref(false)
 const showClearModal = ref(false)
@@ -21,6 +25,12 @@ async function clearCache() {
   appStore.showToast('缓存已清除', 'success')
   showClearModal.value = false
 }
+
+async function handleLogout() {
+  await clientAuthStore.logout()
+  appStore.showToast('已退出登录', 'success')
+  router.push('/')
+}
 </script>
 
 <template>
@@ -33,6 +43,23 @@ async function clearCache() {
 
       <!-- Content -->
       <div class="page-content">
+        <!-- Personal Card -->
+        <div class="profile-card">
+          <div class="profile-info">
+            <div class="profile-avatar">
+              <CircleUser :size="40" />
+            </div>
+            <div class="profile-text">
+              <span class="profile-name">{{ clientAuthStore.displayName }}</span>
+              <span class="profile-phone">{{ clientAuthStore.user?.phone }}</span>
+            </div>
+          </div>
+          <button class="logout-btn" @click="handleLogout">
+            <LogOut :size="16" />
+            退出登录
+          </button>
+        </div>
+
         <!-- Theme -->
         <div class="settings-card">
           <div class="setting-item">
@@ -235,5 +262,67 @@ async function clearCache() {
 .confirm-text {
   text-align: center;
   color: var(--color-text-secondary);
+}
+
+.profile-card {
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.profile-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.profile-avatar {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark, #cc3333));
+  border-radius: 50%;
+  color: white;
+  flex-shrink: 0;
+}
+
+.profile-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.profile-name {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.profile-phone {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-sm);
+  font-size: 0.875rem;
+  color: var(--color-error);
+  background-color: rgba(220, 38, 38, 0.08);
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+}
+
+.logout-btn:hover {
+  background-color: rgba(220, 38, 38, 0.15);
 }
 </style>

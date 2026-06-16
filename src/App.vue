@@ -3,29 +3,39 @@ import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { RouterView } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useClientAuthStore } from '@/stores/clientAuth'
 import { useAppStore } from '@/stores/app'
 import Toast from '@/shared/components/Toast.vue'
+import ClientLoginModal from '@/client/components/ClientLoginModal.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const clientAuthStore = useClientAuthStore()
 const appStore = useAppStore()
 
 // Handle auth expired event (401 response)
 function handleAuthExpired(event: Event) {
   const customEvent = event as CustomEvent<{ redirect: string; message: string }>
   const { redirect } = customEvent.detail
+  const currentPath = redirect || window.location.pathname
 
-  // Show toast notification
-  appStore.showToast('会话已过期，请重新登录', 'error')
+  // Check if this is a client path or admin path
+  const isAdminPath = currentPath.startsWith('/admin')
 
-  // Clear auth state
-  authStore.logout()
-
-  // Redirect to login page with redirect parameter
-  router.push({
-    path: '/admin/login',
-    query: { redirect }
-  })
+  if (isAdminPath) {
+    // Admin path - show toast and redirect to admin login
+    appStore.showToast('会话已过期，请重新登录', 'error')
+    authStore.logout()
+    router.push({
+      path: '/admin/login',
+      query: { redirect: currentPath }
+    })
+  } else {
+    // Client path - clear client session and trigger login modal
+    clientAuthStore.clearSession()
+    appStore.showToast('登录已过期，请重新登录', 'error')
+    window.dispatchEvent(new CustomEvent('client:require-login'))
+  }
 }
 
 onMounted(() => {
@@ -44,6 +54,7 @@ onUnmounted(() => {
     </Transition>
   </RouterView>
   <Toast />
+  <ClientLoginModal />
 </template>
 
 <style>

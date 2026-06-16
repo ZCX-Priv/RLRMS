@@ -5,6 +5,7 @@ import { api } from '@/api'
 import { useCartStore } from '@/stores/cart'
 import { useTableStore } from '@/stores/table'
 import { useAppStore } from '@/stores/app'
+import { useClientAuthStore } from '@/stores/clientAuth'
 import type { Category, Dish } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import DishCard from '@/client/components/DishCard.vue'
@@ -146,10 +147,33 @@ function setSectionRef(el: Element | ComponentPublicInstance | null, categoryNam
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   fetchData()
   
-  if (!tableStore.isTableSelected) {
+  // 先确保已登录
+  const clientAuthStore = useClientAuthStore()
+  if (!clientAuthStore.isAuthenticated) {
+    const restored = await clientAuthStore.tryRestore()
+    if (!restored) {
+      // 触发登录弹窗，等待登录结果
+      await new Promise<void>((resolve) => {
+        function onSuccess() {
+          window.removeEventListener('client:login-cancel', onCancel)
+          resolve()
+        }
+        function onCancel() {
+          window.removeEventListener('client:login-success', onSuccess)
+          resolve()
+        }
+        window.addEventListener('client:login-success', onSuccess, { once: true })
+        window.addEventListener('client:login-cancel', onCancel, { once: true })
+        window.dispatchEvent(new CustomEvent('client:require-login'))
+      })
+    }
+  }
+  
+  // 登录完成后再检查桌位
+  if (clientAuthStore.isAuthenticated && !tableStore.isTableSelected) {
     showTableModal.value = true
   }
 })

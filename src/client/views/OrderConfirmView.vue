@@ -5,6 +5,7 @@ import { api } from '@/api'
 import { useCartStore } from '@/stores/cart'
 import { useTableStore } from '@/stores/table'
 import { useAppStore } from '@/stores/app'
+import { useClientAuthStore } from '@/stores/clientAuth'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
 
@@ -15,6 +16,7 @@ const router = useRouter()
 const cartStore = useCartStore()
 const tableStore = useTableStore()
 const appStore = useAppStore()
+const clientAuthStore = useClientAuthStore()
 
 const isAfterNoon = computed(() => {
   const now = new Date()
@@ -46,6 +48,16 @@ onMounted(() => {
   if (isAfterNoon.value) {
     diningTime.value = '晚上'
   }
+  // Auto-fill phone from logged-in user
+  if (clientAuthStore.user?.phone) {
+    contactPhone.value = clientAuthStore.user.phone
+  }
+  // Auto-fill contact name from localStorage
+  const savedName = localStorage.getItem('contact_name')
+  if (savedName) {
+    contactName.value = savedName
+    validateName(savedName)
+  }
 })
 
 function validateName(value: string) {
@@ -65,6 +77,8 @@ function handleNameInput(event: Event) {
   const value = (event.target as HTMLInputElement).value
   contactName.value = value
   validateName(value)
+  // Persist to localStorage for auto-fill next time
+  localStorage.setItem('contact_name', value)
 }
 
 function handlePhoneInput(event: Event) {

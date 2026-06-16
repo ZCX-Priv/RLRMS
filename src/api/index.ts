@@ -17,13 +17,14 @@ export class ApiError extends Error {
 interface RequestOptions extends RequestInit {
   timeout?: number
   signal?: AbortSignal
+  skip401Handler?: boolean
 }
 
 async function request<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { timeout = 30000, signal, ...fetchOptions } = options
+  const { timeout = 30000, signal, skip401Handler, ...fetchOptions } = options
   
   const url = `${API_BASE}${endpoint}`
   
@@ -51,7 +52,7 @@ async function request<T>(
     const data = await response.json()
 
     // Handle 401 Unauthorized - trigger global auth expired event
-    if (response.status === 401) {
+    if (response.status === 401 && !skip401Handler) {
       const currentPath = window.location.pathname
       window.dispatchEvent(new CustomEvent('auth:expired', {
         detail: {
@@ -176,6 +177,24 @@ export const api = {
     return request<{ success: boolean; message: string }>('/auth/password', {
       method: 'PUT',
       body: JSON.stringify({ oldPassword, newPassword }),
+    })
+  },
+  
+  // Client Auth
+  async clientLogin(phone: string, password: string) {
+    return request<{ success: boolean; data: { user: { id: string; phone: string; role: 'customer' } } }>('/auth/client/login', {
+      method: 'POST',
+      body: JSON.stringify({ phone, password }),
+    })
+  },
+  
+  async clientVerifyToken() {
+    return request<{ success: boolean; data: { userId: string; phone: string; role: 'customer' } }>('/auth/client/verify', { skip401Handler: true })
+  },
+  
+  async clientLogout() {
+    return request<{ success: boolean; message: string }>('/auth/client/logout', {
+      method: 'POST',
     })
   },
   

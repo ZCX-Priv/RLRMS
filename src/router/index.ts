@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
+import { useClientAuthStore } from '@/stores/clientAuth'
 
 const isEdgeBrowser = navigator.userAgent.includes('Edg/')
 const originalReplaceState = window.history.replaceState.bind(window.history)
@@ -62,7 +63,7 @@ const clientRoutes: RouteRecordRaw[] = [
     path: '/order/confirm',
     name: 'OrderConfirm',
     component: () => import('@/client/views/OrderConfirmView.vue'),
-    meta: { title: '确认订单' }
+    meta: { title: '确认订单', requiresClientAuth: true }
   },
   {
     path: '/order/:id',
@@ -80,13 +81,13 @@ const clientRoutes: RouteRecordRaw[] = [
     path: '/orders',
     name: 'Orders',
     component: () => import('@/client/views/OrdersView.vue'),
-    meta: { title: '全部订单' }
+    meta: { title: '全部订单', requiresClientAuth: true }
   },
   {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/client/views/SettingsView.vue'),
-    meta: { title: '设置' }
+    meta: { title: '设置', requiresClientAuth: true }
   }
 ]
 
@@ -178,6 +179,48 @@ router.beforeEach(async (to, _from, next) => {
   // Update document title
   const title = to.meta.title as string
   document.title = title ? `${title} - 红灯笼食府` : '红灯笼食府'
+  
+  // Check client auth for protected client routes
+  if (to.meta.requiresClientAuth) {
+    const clientAuthStore = useClientAuthStore()
+    
+    // If already authenticated, allow access
+    if (clientAuthStore.isAuthenticated) {
+      next()
+      return
+    }
+    
+    // Try to restore from cookie
+    const restored = await clientAuthStore.tryRestore()
+    if (restored) {
+      next()
+      return
+    }
+    
+    // Need to login - trigger the login modal
+    const loginSuccess = await new Promise<boolean>((resolve) => {
+      function onSuccess() {
+        window.removeEventListener('client:login-cancel', onCancel)
+        resolve(true)
+      }
+      function onCancel() {
+        window.removeEventListener('client:login-success', onSuccess)
+        resolve(false)
+      }
+      window.addEventListener('client:login-success', onSuccess, { once: true })
+      window.addEventListener('client:login-cancel', onCancel, { once: true })
+      // Show login modal
+      window.dispatchEvent(new CustomEvent('client:require-login'))
+    })
+    
+    if (loginSuccess) {
+      next()
+    } else {
+      // User cancelled login, go to home
+      next({ name: 'Home' })
+    }
+    return
+  }
   
   // Check auth for admin routes
   if (to.meta.requiresAuth) {

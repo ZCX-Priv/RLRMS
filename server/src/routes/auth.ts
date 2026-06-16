@@ -59,6 +59,7 @@ if (!process.env.JWT_SECRET) {
 
 const isProduction = process.env.NODE_ENV === 'production'
 const COOKIE_NAME = 'admin_token'
+const CLIENT_COOKIE_NAME = 'client_token'
 const COOKIE_MAX_AGE = 24 * 60 * 60 * 1000 // 1 day in milliseconds
 
 export const authRouter = Router()
@@ -177,6 +178,146 @@ authRouter.get('/verify', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error verifying token:', error)
     res.status(401).json({ success: false, error: 'Invalid token' })
+  }
+})
+
+// Client login / auto-register
+authRouter.post('/client/login', async (req: Request, res: Response) => {
+  try {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown'
+    
+    // Check rate limit
+    if (!checkRateLimit(ip)) {
+      return res.status(429).json({ 
+        success: false, 
+        error: '登录尝试次数过多，请15分钟后再试' 
+      })
+    }
+    
+    const { phone, password } = req.body
+    
+    if (!phone || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        error: '请输入手机号和密码' 
+      })
+    }
+    
+    // Validate phone format (11 digits)
+    if (!/^1\d{10}$/.test(phone)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: '请输入正确的手机号' 
+      })
+    }
+    
+    if (typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: '密码长度不能少于6位'
+      })
+    }
+    
+    // Check if customer exists
+    let user = get<{
+      id: string
+      username: string
+      password: string
+      role: string
+      phone: string | null
+      name: string | null
+    }>('SELECT * FROM users WHERE phone = ? AND role = ?', [phone, 'customer'])
+    
+    if (!user) {
+      // Auto-register
+      const hashedPassword = await bcrypt.hash(password, 10)
+      const id = randomBytes(16).toString('hex')
+      run(
+        'INSERT INTO users (id, username, password, role, phone, name) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, phone, hashedPassword, 'customer', phone, `用户${phone.slice(-4)}`]
+      )
+      user = get<typeof user>('SELECT * FROM users WHERE id = ?', [id])
+      if (!user) {
+        return res.status(500).json({ success: false, error: '注册失败' })
+      }
+    } else {
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, user.password)
+      if (!isValidPassword) {
+        return res.status(401).json({ 
+          success: false, 
+          error: '手机号或密码错误' 
+        })
+      }
+    }
+    
+    // Clear login attempts on successful login
+    loginAttempts.delete(ip)
+    
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, username: user.username, role: 'customer', phone: user.phone },
+      SECRET_KEY,
+      { expiresIn: '7d' }
+    )
+    
+    // Set httpOnly cookie
+    res.cookie(CLIENT_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge: 7 * COOKIE_MAX_AGE,
+      path: '/',
+    })
+    
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          phone: user.phone,
+          role: 'customer'
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Error during client login:', error)
+    res.status(500).json({ success: false, error: '登录失败' })
+  }
+})
+
+// Client logout
+authRouter.post('/client/logout', (_req: Request, res: Response) => {
+  res.clearCookie(CLIENT_COOKIE_NAME, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    path: '/',
+  })
+  res.json({ success: true, message: '已退出登录' })
+})
+
+// Client verify token
+authRouter.get('/client/verify', (req: Request, res: Response) => {
+  try {
+    const token = req.cookies?.[CLIENT_COOKIE_NAME]
+    if (!token) {
+      return res.status(401).json({ success: false, error: '未登录' })
+    }
+    
+    const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload & { phone?: string }
+    
+    res.json({
+      success: true,
+      data: {
+        userId: decoded.userId,
+        phone: decoded.phone || decoded.username,
+        role: decoded.role
+      }
+    })
+  } catch (error) {
+    console.error('Error verifying client token:', error)
+    res.status(401).json({ success: false, error: '登录已过期' })
   }
 })
 
