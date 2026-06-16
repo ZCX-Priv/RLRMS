@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, defineAsyncComponent } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
@@ -71,6 +71,54 @@ async function fetchOrder() {
     appStore.showToast('获取订单信息失败', 'error')
   } finally {
     loading.value = false
+  }
+}
+
+// 订单状态轮询
+let pollingTimer: ReturnType<typeof setInterval> | null = null
+const POLLING_INTERVAL = 3000
+const ACTIVE_STATUSES = ['pending', 'confirmed', 'preparing', 'ready']
+
+function isOrderActive(): boolean {
+  return !!order.value && ACTIVE_STATUSES.includes(order.value.status)
+}
+
+async function pollOrder() {
+  if (!isOrderActive()) {
+    stopPolling()
+    return
+  }
+  try {
+    const id = route.params.id as string
+    const res = await api.getOrder(id)
+    order.value = res.data
+    // 如果状态变为非活跃，停止轮询
+    if (!isOrderActive()) {
+      stopPolling()
+    }
+  } catch (error) {
+    console.error('Polling order error:', error)
+  }
+}
+
+function startPolling() {
+  if (pollingTimer) return
+  pollingTimer = setInterval(pollOrder, POLLING_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopPolling()
+  } else if (isOrderActive()) {
+    pollOrder() // 先立刻拉一次
+    startPolling()
   }
 }
 
@@ -148,7 +196,17 @@ watch(showQRModal, (newVal) => {
 })
 
 onMounted(() => {
-  fetchOrder()
+  fetchOrder().then(() => {
+    if (isOrderActive()) {
+      startPolling()
+    }
+  })
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onUnmounted(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 

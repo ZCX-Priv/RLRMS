@@ -12,6 +12,7 @@ import { createDishSchema, updateDishSchema, createTableSchema, createCategorySc
 import sharp from 'sharp'
 import AdmZip from 'adm-zip'
 import archiver from 'archiver'
+import { addSSEClient, removeSSEClient, broadcastSSE } from '../utils/sse.js'
 
 function safeJsonParse<T>(jsonString: string | null | undefined, defaultValue: T): T {
   if (!jsonString) return defaultValue
@@ -130,6 +131,37 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ success: false, error: 'Invalid token' })
   }
 }
+
+// ===== SSE 实时推送 =====
+adminRouter.get('/events', requireAuth, (req: Request, res: Response) => {
+  // 设置 SSE 响应头
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no') // 禁用 nginx 缓冲
+  res.flushHeaders()
+
+  const client = addSSEClient(res)
+
+  // 发送初始连接确认
+  res.write(`event: connected\ndata: {"clientId":"${client.id}"}\n\n`)
+
+  // 心跳保活，每 30 秒发送一次
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': heartbeat\n\n')
+    } catch {
+      clearInterval(heartbeat)
+      removeSSEClient(client)
+    }
+  }, 30000)
+
+  // 客户端断开时清理
+  req.on('close', () => {
+    clearInterval(heartbeat)
+    removeSSEClient(client)
+  })
+})
 
 // Dashboard stats
 adminRouter.get('/dashboard', requireAuth, (req, res) => {
@@ -618,19 +650,115 @@ adminRouter.get('/orders', requireAuth, (req, res) => {
       dining_time: string | null
     }>(query, params)
     
-    const ordersWithItems = orders.map(order => {
-      const items = all('SELECT * FROM order_items WHERE order_id = ?', [order.id])
-      return { 
-        ...order, 
-        created_at: formatDateTime(order.created_at),
-        items 
+    // 批量查询所有订单的菜品明细，避免 N+1 查询
+    if (orders.length === 0) {
+      return res.json({ success: true, data: [] })
+    }
+    const orderIds = orders.map(o => o.id)
+    const placeholders = orderIds.map(() => '?').join(',')
+    const allItems = all<{
+      id: string
+      order_id: string
+      dish_id: string
+      dish_name: string
+      quantity: number
+      unit_price: number
+      subtotal: number
+      spec: string | null
+    }>(`SELECT * FROM order_items WHERE order_id IN (${placeholders})`, orderIds)
+    
+    // 按 order_id 分组
+    const itemsByOrder = new Map<string, typeof allItems>()
+    for (const item of allItems) {
+      const list = itemsByOrder.get(item.order_id)
+      if (list) {
+        list.push(item)
+      } else {
+        itemsByOrder.set(item.order_id, [item])
       }
-    })
+    }
+    
+    const ordersWithItems = orders.map(order => ({
+      ...order,
+      created_at: formatDateTime(order.created_at),
+      items: itemsByOrder.get(order.id) || []
+    }))
     
     res.json({ success: true, data: ordersWithItems })
   } catch (error) {
     console.error('Error fetching orders:', error)
     res.status(500).json({ success: false, error: 'Failed to fetch orders' })
+  }
+})
+
+// 按订单号搜索订单（必须在 /:id 路由之前）
+adminRouter.get('/orders/search', requireAuth, (req, res) => {
+  try {
+    const { order_no } = req.query
+    if (!order_no || typeof order_no !== 'string') {
+      return res.status(400).json({ success: false, error: '请输入订单号' })
+    }
+    
+    // 支持模糊搜索
+    const query = `
+      SELECT o.*, t.name as table_name, t.table_no
+      FROM orders o
+      LEFT JOIN tables t ON o.table_id = t.id
+      WHERE o.order_no LIKE ?
+      ORDER BY o.created_at DESC
+      LIMIT 20
+    `
+    const searchOrders = all<{
+      id: string
+      order_no: string
+      table_name: string | null
+      table_no: string | null
+      contact_name: string | null
+      contact_phone: string | null
+      total_amount: number
+      status: string
+      created_at: string
+      dining_time: string | null
+    }>(query, [`%${order_no}%`])
+    
+    if (searchOrders.length === 0) {
+      return res.json({ success: true, data: [] })
+    }
+    
+    // 批量查询订单明细
+    const orderIds = searchOrders.map(o => o.id)
+    const placeholders = orderIds.map(() => '?').join(',')
+    const allItems = all<{
+      id: string
+      order_id: string
+      dish_id: string
+      dish_name: string
+      quantity: number
+      unit_price: number
+      subtotal: number
+      spec: string | null
+    }>(`SELECT * FROM order_items WHERE order_id IN (${placeholders})`, orderIds)
+    
+    const itemsByOrder = new Map<string, typeof allItems>()
+    for (const item of allItems) {
+      const list = itemsByOrder.get(item.order_id)
+      if (list) {
+        list.push(item)
+      } else {
+        itemsByOrder.set(item.order_id, [item])
+      }
+    }
+    
+    const result = searchOrders.map(order => ({
+      ...order,
+      created_at: formatDateTime(order.created_at),
+      items: itemsByOrder.get(order.id) || []
+    }))
+    
+    res.json({ success: true, data: result })
+  } catch (error) {
+    console.error('Error searching orders:', error)
+    res.status(500).json({ success: false, error: '搜索订单失败' })
   }
 })
 
@@ -662,6 +790,9 @@ adminRouter.put('/orders/:id/status', requireAuth, (req, res) => {
     if ((status === 'completed' || status === 'cancelled') && order.table_id) {
       run('UPDATE tables SET status = \'available\', updated_at = CURRENT_TIMESTAMP WHERE id = ?', [order.table_id])
     }
+    
+    // SSE 广播订单状态变更事件
+    broadcastSSE('order_updated', { id, status })
     
     res.json({ success: true, message: 'Order status updated' })
   } catch (error) {

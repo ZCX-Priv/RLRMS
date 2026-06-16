@@ -3,6 +3,7 @@ import { all, get, run } from '../db/index.js'
 import { v4 as uuidv4 } from 'uuid'
 import { formatDateTime } from '../utils/format.js'
 import { createOrderSchema, cancelOrderSchema } from '../validators/index.js'
+import { broadcastSSE } from '../utils/sse.js'
 
 export const ordersRouter = Router()
 
@@ -49,25 +50,39 @@ ordersRouter.get('/', (req, res) => {
       created_at: string
     }>(query, params)
     
-    // Get order items for each order
-    const ordersWithItems = orders.map(order => {
-      const items = all<{
-        id: string
-        order_id: string
-        dish_id: string
-        dish_name: string
-        quantity: number
-        unit_price: number
-        subtotal: number
-        spec: string | null
-      }>('SELECT * FROM order_items WHERE order_id = ?', [order.id])
-      
-      return {
-        ...order,
-        created_at: formatDateTime(order.created_at),
-        items
+    // 批量查询所有订单的菜品明细，避免 N+1 查询
+    if (orders.length === 0) {
+      return res.json({ success: true, data: [] })
+    }
+    const orderIds = orders.map(o => o.id)
+    const placeholders = orderIds.map(() => '?').join(',')
+    const allItems = all<{
+      id: string
+      order_id: string
+      dish_id: string
+      dish_name: string
+      quantity: number
+      unit_price: number
+      subtotal: number
+      spec: string | null
+    }>(`SELECT * FROM order_items WHERE order_id IN (${placeholders})`, orderIds)
+    
+    // 按 order_id 分组
+    const itemsByOrder = new Map<string, typeof allItems>()
+    for (const item of allItems) {
+      const list = itemsByOrder.get(item.order_id)
+      if (list) {
+        list.push(item)
+      } else {
+        itemsByOrder.set(item.order_id, [item])
       }
-    })
+    }
+    
+    const ordersWithItems = orders.map(order => ({
+      ...order,
+      created_at: formatDateTime(order.created_at),
+      items: itemsByOrder.get(order.id) || []
+    }))
     
     res.json({ success: true, data: ordersWithItems })
   } catch (error) {
@@ -241,9 +256,14 @@ ordersRouter.post('/', (req, res) => {
     
     const orderItems = all('SELECT * FROM order_items WHERE order_id = ?', [orderId])
     
+    const createdOrder = { ...order, items: orderItems }
+    
+    // SSE 广播新订单事件
+    broadcastSSE('new_order', createdOrder)
+    
     res.status(201).json({ 
       success: true, 
-      data: { ...order, items: orderItems }
+      data: createdOrder
     })
   } catch (error) {
     console.error('Error creating order:', error)
@@ -304,6 +324,9 @@ ordersRouter.post('/:id/cancel', (req, res) => {
     if (order.table_id) {
       run('UPDATE tables SET status = \'available\', updated_at = CURRENT_TIMESTAMP WHERE id = ?', [order.table_id])
     }
+    
+    // SSE 广播订单取消事件
+    broadcastSSE('order_updated', { id, status: 'cancelled' })
     
     res.json({ success: true, message: '订单已取消' })
   } catch (error) {

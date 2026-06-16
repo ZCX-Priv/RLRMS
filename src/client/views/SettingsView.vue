@@ -6,7 +6,7 @@ import { useClientAuthStore } from '@/stores/clientAuth'
 import { clear as clearIndexedDB } from '@/utils/storage'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import Modal from '@/shared/components/Modal.vue'
-import { Sun, Moon, ChevronRight, Info, Trash2, CircleUser, LogOut } from 'lucide-vue-next'
+import { Sun, Moon, Monitor, ChevronRight, Info, Trash2, CircleUser, LogOut } from 'lucide-vue-next'
 
 const router = useRouter()
 const appStore = useAppStore()
@@ -15,7 +15,7 @@ const clientAuthStore = useClientAuthStore()
 const showAboutModal = ref(false)
 const showClearModal = ref(false)
 
-function handleThemeChange(theme: 'light' | 'dark') {
+function handleThemeChange(theme: 'light' | 'dark' | 'system') {
   appStore.setTheme(theme)
 }
 
@@ -64,16 +64,26 @@ async function handleLogout() {
         <div class="settings-card">
           <div class="setting-item">
             <div class="setting-icon">
-              <Sun v-if="appStore.theme === 'light'" :size="20" />
+              <Monitor v-if="appStore.theme === 'system'" :size="20" />
+              <Sun v-else-if="appStore.resolvedTheme === 'light'" :size="20" />
               <Moon v-else :size="20" />
             </div>
             <span class="setting-label">主题</span>
             <div class="theme-options">
               <button
                 class="theme-btn"
+                :class="{ 'theme-btn-active': appStore.theme === 'system' }"
+                @click="handleThemeChange('system')"
+              >
+                <Monitor :size="14" />
+                系统
+              </button>
+              <button
+                class="theme-btn"
                 :class="{ 'theme-btn-active': appStore.theme === 'light' }"
                 @click="handleThemeChange('light')"
               >
+                <Sun :size="14" />
                 浅色
               </button>
               <button
@@ -81,6 +91,7 @@ async function handleLogout() {
                 :class="{ 'theme-btn-active': appStore.theme === 'dark' }"
                 @click="handleThemeChange('dark')"
               >
+                <Moon :size="14" />
                 深色
               </button>
             </div>
@@ -219,6 +230,9 @@ async function handleLogout() {
 }
 
 .theme-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: var(--spacing-xs) var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

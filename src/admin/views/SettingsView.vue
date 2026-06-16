@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
-import { Sun, Moon, Lock, Info, LogOut, Store, Save, RotateCcw, AlertTriangle, Download, Upload, Database } from 'lucide-vue-next'
+import { Sun, Moon, Monitor, Lock, Info, LogOut, Store, Save, RotateCcw, AlertTriangle, Download, Upload, Database } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
@@ -74,7 +74,7 @@ async function handleSaveSettings() {
   }
 }
 
-function handleThemeChange(theme: 'light' | 'dark') {
+function handleThemeChange(theme: 'light' | 'dark' | 'system') {
   appStore.setTheme(theme)
 }
 
@@ -254,16 +254,26 @@ async function handleImport() {
       <h2 class="section-title">外观设置</h2>
       <div class="setting-item">
         <div class="setting-info">
-          <Sun v-if="appStore.theme === 'light'" :size="20" />
+          <Monitor v-if="appStore.theme === 'system'" :size="20" />
+          <Sun v-else-if="appStore.resolvedTheme === 'light'" :size="20" />
           <Moon v-else :size="20" />
           <span>主题模式</span>
         </div>
         <div class="theme-options">
           <button
             class="theme-btn"
+            :class="{ 'theme-btn-active': appStore.theme === 'system' }"
+            @click="handleThemeChange('system')"
+          >
+            <Monitor :size="14" />
+            系统
+          </button>
+          <button
+            class="theme-btn"
             :class="{ 'theme-btn-active': appStore.theme === 'light' }"
             @click="handleThemeChange('light')"
           >
+            <Sun :size="14" />
             浅色
           </button>
           <button
@@ -271,6 +281,7 @@ async function handleImport() {
             :class="{ 'theme-btn-active': appStore.theme === 'dark' }"
             @click="handleThemeChange('dark')"
           >
+            <Moon :size="14" />
             深色
           </button>
         </div>
@@ -587,6 +598,9 @@ async function handleImport() {
 }
 
 .theme-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: var(--spacing-xs) var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

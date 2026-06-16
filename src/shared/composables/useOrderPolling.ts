@@ -3,13 +3,15 @@ import { ref, onMounted, onUnmounted } from 'vue'
 interface OrderPollingOptions {
   interval?: number
   onNewOrder?: (count: number) => void
+  /** 返回 false 时跳过本次轮询（例如 SSE 已连接时） */
+  shouldPoll?: () => boolean
 }
 
 export function useOrderPolling(
   fetchFunction: () => Promise<void>,
   options: OrderPollingOptions = {}
 ) {
-  const { interval = 5000, onNewOrder } = options
+  const { interval = 5000, onNewOrder, shouldPoll } = options
   const isPolling = ref(false)
   const lastOrderCount = ref(0)
   let pollingTimer: ReturnType<typeof setInterval> | null = null
@@ -18,6 +20,8 @@ export function useOrderPolling(
     if (pollingTimer) return
     isPolling.value = true
     pollingTimer = setInterval(async () => {
+      // 如果提供了 shouldPoll 且返回 false，则跳过本次轮询
+      if (shouldPoll && !shouldPoll()) return
       try {
         await fetchFunction()
       } catch (error) {

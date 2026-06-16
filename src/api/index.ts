@@ -304,6 +304,10 @@ export const api = {
     })
   },
   
+  async searchAdminOrders(orderNo: string) {
+    return request<{ success: boolean; data: Order[] }>(`/admin/orders/search?order_no=${encodeURIComponent(orderNo)}`)
+  },
+  
   async getInventory() {
     return request<{ success: boolean; data: InventoryItem[] }>('/admin/inventory')
   },

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, defineAsyncComponent } from 'vue'
+import { ref, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
 import { useOrderPolling } from '@/shared/composables/useOrderPolling'
@@ -8,7 +8,7 @@ import Skeleton from '@/shared/components/Skeleton.vue'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { ShoppingBag, DollarSign, Clock, CheckCircle, Eye, XCircle, Trash2, Box, Bell, BellOff } from 'lucide-vue-next'
+import { ShoppingBag, DollarSign, Clock, CheckCircle, Eye, XCircle, Trash2, Box, Bell, BellOff, Search } from 'lucide-vue-next'
 
 const appStore = useAppStore()
 
@@ -26,6 +26,45 @@ const dateFilter = ref('today')
 const autoRefreshEnabled = ref(true)
 const newOrderCount = ref(0)
 const showNewOrderNotification = ref(false)
+
+// 订单查询相关
+const showSearchModal = ref(false)
+const searchQuery = ref('')
+const searchResults = ref<Order[]>([])
+const searching = ref(false)
+const hasSearched = ref(false)
+
+async function handleSearchOrder() {
+  const q = searchQuery.value.trim()
+  if (!q) return
+  try {
+    searching.value = true
+    hasSearched.value = true
+    const res = await api.searchAdminOrders(q)
+    searchResults.value = res.data
+  } catch (error) {
+    console.error('Failed to search orders:', error)
+    appStore.showToast('查询订单失败', 'error')
+    searchResults.value = []
+  } finally {
+    searching.value = false
+  }
+}
+
+function openSearchResult(order: Order) {
+  showSearchModal.value = false
+  searchQuery.value = ''
+  searchResults.value = []
+  hasSearched.value = false
+  selectedOrder.value = order
+  showDetailModal.value = true
+}
+
+function resetSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+  hasSearched.value = false
+}
 
 const dateOptions = [
   { value: 'today', label: '今天' },
@@ -255,6 +294,94 @@ function dismissNotification() {
   newOrderCount.value = 0
 }
 
+// ===== SSE 实时推送 =====
+let eventSource: EventSource | null = null
+let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null
+const sseConnected = ref(false)
+const SSE_RECONNECT_DELAY = 3000
+
+function connectSSE() {
+  // 清理旧的连接
+  disconnectSSE()
+  
+  const es = new EventSource('/api/admin/events', { withCredentials: true })
+  eventSource = es
+  
+  es.addEventListener('connected', () => {
+    sseConnected.value = true
+    // SSE 连接成功后停止轮询（如果正在轮询）
+    if (isPolling.value) {
+      stopPolling()
+    }
+  })
+  
+  // 新订单事件：增量更新
+  es.addEventListener('new_order', (e: MessageEvent) => {
+    try {
+      const newOrder: Order = JSON.parse(e.data)
+      // 如果当前没有筛选条件，直接插入到列表头部
+      if (!statusFilter.value && dateFilter.value === 'today') {
+        orders.value.unshift(newOrder)
+        handleNewOrder(1)
+        fetchDashboard(false)
+      } else {
+        // 有筛选条件时全量刷新
+        fetchOrders(true)
+        fetchDashboard(false)
+      }
+    } catch (err) {
+      console.error('SSE new_order parse error:', err)
+    }
+  })
+  
+  // 订单状态更新事件：增量更新
+  es.addEventListener('order_updated', (e: MessageEvent) => {
+    try {
+      const { id, status } = JSON.parse(e.data) as { id: string; status: Order['status'] }
+      const idx = orders.value.findIndex(o => o.id === id)
+      if (idx !== -1) {
+        orders.value[idx] = { ...orders.value[idx]!, status }
+      }
+      // 同步更新选中订单的状态
+      if (selectedOrder.value?.id === id) {
+        selectedOrder.value = { ...selectedOrder.value, status }
+      }
+      fetchDashboard(false)
+    } catch (err) {
+      console.error('SSE order_updated parse error:', err)
+    }
+  })
+  
+  es.onerror = () => {
+    sseConnected.value = true
+    es.close()
+    eventSource = null
+    // SSE 断开后启用轮询作为降级方案
+    if (autoRefreshEnabled.value && !isPolling.value) {
+      startPolling()
+    }
+    // 定时重连 SSE
+    if (!sseReconnectTimer) {
+      sseReconnectTimer = setTimeout(() => {
+        sseReconnectTimer = null
+        connectSSE()
+      }, SSE_RECONNECT_DELAY)
+    }
+  }
+}
+
+function disconnectSSE() {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+  sseConnected.value = false
+  if (sseReconnectTimer) {
+    clearTimeout(sseReconnectTimer)
+    sseReconnectTimer = null
+  }
+}
+
 async function fetchOrdersWithCheck() {
   const previousCount = orders.value.length
   await fetchOrders(true)
@@ -266,23 +393,33 @@ async function fetchOrdersWithCheck() {
 
 const { isPolling, startPolling, stopPolling } = useOrderPolling(
   fetchOrdersWithCheck,
-  { interval: 5000 }
+  { interval: 5000, shouldPoll: () => !sseConnected.value }
 )
 
 function toggleAutoRefresh() {
   autoRefreshEnabled.value = !autoRefreshEnabled.value
   if (autoRefreshEnabled.value) {
-    startPolling()
+    // SSE 未连接时才启动轮询
+    if (!sseConnected.value) {
+      startPolling()
+    }
     appStore.showToast('已开启自动刷新', 'success')
   } else {
     stopPolling()
+    disconnectSSE()
     appStore.showToast('已关闭自动刷新', 'info')
   }
 }
 
 watch(autoRefreshEnabled, (enabled) => {
-  if (enabled && !isPolling.value) {
-    startPolling()
+  if (enabled) {
+    if (!sseConnected.value && !isPolling.value) {
+      startPolling()
+    }
+    // 尝试重新连接 SSE
+    if (!eventSource) {
+      connectSSE()
+    }
   } else if (!enabled && isPolling.value) {
     stopPolling()
   }
@@ -291,6 +428,11 @@ watch(autoRefreshEnabled, (enabled) => {
 onMounted(() => {
   fetchDashboard()
   fetchOrders()
+  connectSSE()
+})
+
+onUnmounted(() => {
+  disconnectSSE()
 })
 </script>
 
@@ -380,6 +522,10 @@ onMounted(() => {
         <div class="section-header">
           <h2 class="section-title">订单列表</h2>
           <div class="filter-group">
+            <button class="btn btn-secondary btn-sm" @click="showSearchModal = true">
+              <Search :size="14" />
+              订单查询
+            </button>
             <select v-model="dateFilter" class="filter-select" @change="() => fetchOrders()">
               <option v-for="opt in dateOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
@@ -586,6 +732,75 @@ onMounted(() => {
       @confirm="confirmClearAllOrders"
       @cancel="showClearConfirm = false"
     />
+
+    <!-- Order Search Modal -->
+    <Modal
+      :show="showSearchModal"
+      title="订单查询"
+      size="md"
+      @close="showSearchModal = false; resetSearch()"
+    >
+      <div class="search-content">
+        <div class="search-input-wrapper">
+          <Search :size="16" class="search-input-icon" />
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="search-input"
+            placeholder="输入订单号（支持模糊搜索）"
+            @keyup.enter="handleSearchOrder"
+            autofocus
+          />
+          <button
+            class="btn btn-primary btn-sm"
+            :disabled="searching || !searchQuery.trim()"
+            @click="handleSearchOrder"
+          >
+            {{ searching ? '搜索中...' : '搜索' }}
+          </button>
+        </div>
+
+        <div v-if="searching" class="search-loading">
+          <div class="loading-spinner"></div>
+          <span>正在查询订单...</span>
+        </div>
+
+        <div v-else-if="hasSearched && searchResults.length === 0" class="search-empty">
+          <Box :size="32" />
+          <p>未找到匹配的订单</p>
+        </div>
+
+        <div v-else-if="searchResults.length > 0" class="search-results">
+          <p class="search-results-count">找到 {{ searchResults.length }} 条结果</p>
+          <div
+            v-for="order in searchResults"
+            :key="order.id"
+            class="search-result-item"
+            @click="openSearchResult(order)"
+          >
+            <div class="result-item-header">
+              <span class="result-order-no">{{ order.order_no }}</span>
+              <span
+                class="result-status"
+                :style="{ backgroundColor: statusColor[order.status] }"
+              >
+                {{ statusText[order.status] }}
+              </span>
+            </div>
+            <div class="result-item-info">
+              <span>{{ order.table_name || '未指定桌位' }}</span>
+              <span>{{ order.contact_name }}</span>
+              <span class="result-amount">{{ order.total_amount.toFixed(2) }}元</span>
+            </div>
+            <div class="result-item-time">{{ formatDate(order.created_at) }}</div>
+          </div>
+        </div>
+
+        <div v-else class="search-hint">
+          <p>请输入订单号进行查询，例如：RL20260616001</p>
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>
 
@@ -1040,5 +1255,146 @@ onMounted(() => {
 .slide-down-leave-to {
   opacity: 0;
   transform: translateY(-20px);
+}
+
+/* 订单查询样式 */
+.search-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.search-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+}
+
+.search-input-wrapper:focus-within {
+  border-color: var(--color-primary);
+}
+
+.search-input-icon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  outline: none;
+  font-family: var(--font-body);
+}
+
+.search-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.search-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl);
+  color: var(--color-text-muted);
+}
+
+.search-loading .loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border-light);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-2xl);
+  color: var(--color-text-muted);
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.search-results-count {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  padding: 0 var(--spacing-xs);
+}
+
+.search-result-item {
+  padding: var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.search-result-item:hover {
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border-light);
+  margin: -1px;
+}
+
+.result-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.result-order-no {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.result-status {
+  padding: 2px var(--spacing-sm);
+  font-size: 0.625rem;
+  border-radius: var(--radius-full);
+  color: white;
+}
+
+.result-item-info {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.result-amount {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.result-item-time {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-xs);
+}
+
+.search-hint {
+  text-align: center;
+  padding: var(--spacing-xl);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
 }
 </style>

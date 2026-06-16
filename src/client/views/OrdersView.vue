@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
@@ -65,7 +65,49 @@ function formatDate(dateStr: string) {
 
 onMounted(() => {
   fetchOrders()
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
+
+onUnmounted(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
+
+// 订单列表轮询
+let pollingTimer: ReturnType<typeof setInterval> | null = null
+const POLLING_INTERVAL = 5000
+
+async function pollOrders() {
+  try {
+    const phone = clientAuthStore.user?.phone || undefined
+    const res = await api.getOrders(phone)
+    orders.value = res.data
+  } catch (error) {
+    console.error('Polling orders error:', error)
+  }
+}
+
+function startPolling() {
+  if (pollingTimer) return
+  pollingTimer = setInterval(pollOrders, POLLING_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopPolling()
+  } else {
+    pollOrders() // 立刻拉一次
+    startPolling()
+  }
+}
 </script>
 
 <template>
