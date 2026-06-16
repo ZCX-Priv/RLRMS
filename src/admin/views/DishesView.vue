@@ -645,6 +645,7 @@ onMounted(() => {
   border-radius: var(--radius-md);
   font-size: 0.875rem;
   width: 100%;
+  background-color: transparent;
 }
 
 .page-title {
