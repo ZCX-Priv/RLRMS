@@ -32,7 +32,7 @@ const formData = ref({
   status: 'on_sale' as 'on_sale' | 'off_sale',
 })
 
-const defaultTags = ['推荐', '招牌', '新品', '火爆']
+const defaultTags = ['推荐', '经典', '新品', '火爆']
 const customTags = ref<string[]>([])
 const newCategoryName = ref('')
 const newTagName = ref('')
