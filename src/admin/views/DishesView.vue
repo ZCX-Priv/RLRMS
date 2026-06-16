@@ -7,7 +7,7 @@ import draggable from 'vuedraggable'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { Plus, Edit, Trash2, Image, ChefHat, Upload, X, GripVertical } from 'lucide-vue-next'
+import { Plus, Edit, Trash2, Image, ChefHat, Upload, X, GripVertical, Search } from 'lucide-vue-next'
 
 const appStore = useAppStore()
 
@@ -20,6 +20,7 @@ const showCategoryModal = ref(false)
 const editingDish = ref<Dish | null>(null)
 const uploading = ref(false)
 const selectedCategory = ref<string>('')
+const searchQuery = ref('')
 const formData = ref({
   name: '',
   price: 0,
@@ -44,10 +45,15 @@ const allTags = computed(() => [...defaultTags, ...customTags.value])
 
 const filteredDishes = computed({
   get: () => {
-    if (!selectedCategory.value) {
-      return dishes.value
+    let result = dishes.value
+    if (selectedCategory.value) {
+      result = result.filter(dish => dish.category_id === selectedCategory.value)
     }
-    return dishes.value.filter(dish => dish.category_id === selectedCategory.value)
+    if (searchQuery.value) {
+      const q = searchQuery.value.toLowerCase()
+      result = result.filter(dish => dish.name.toLowerCase().includes(q))
+    }
+    return result
   },
   set: (value) => {
     if (!selectedCategory.value) {
@@ -329,12 +335,18 @@ onMounted(() => {
   <div class="dishes-page">
     <div class="page-header">
       <h1 class="page-title">菜单管理</h1>
-      <div class="header-actions">
-        <button class="btn btn-primary" @click="openAddModal">
-          <Plus :size="18" />
-          添加菜品
-        </button>
+      <div class="search-input-wrapper">
+        <Search :size="16" class="search-icon" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="搜索菜品..."
+        />
       </div>
+      <button class="btn btn-primary" @click="openAddModal">
+        <Plus :size="18" />
+        添加菜品
+      </button>
     </div>
 
     <div class="category-tabs">
@@ -382,8 +394,8 @@ onMounted(() => {
       <div class="empty-icon">
         <ChefHat :size="64" />
       </div>
-      <h3 class="empty-title">暂无菜品</h3>
-      <p class="empty-description">点击上方按钮添加第一道菜品</p>
+      <h3 class="empty-title">{{ searchQuery ? '未找到匹配的菜品' : '暂无菜品' }}</h3>
+      <p class="empty-description">{{ searchQuery ? '请尝试其他关键词' : '点击上方按钮添加第一道菜品' }}</p>
     </div>
 
     <draggable
@@ -394,6 +406,7 @@ onMounted(() => {
       :animation="200"
       ghost-class="ghost-dish"
       handle=".drag-handle-dish"
+      :disabled="!!searchQuery"
       @end="onDishesDragEnd"
     >
       <template #item="{ element: dish }">
@@ -605,11 +618,33 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--spacing-xl);
+  gap: var(--spacing-md);
 }
 
-.header-actions {
+.search-input-wrapper {
+  position: relative;
   display: flex;
-  gap: var(--spacing-sm);
+  align-items: center;
+  flex: 1;
+  max-width: 280px;
+}
+
+.search-input-wrapper .search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.search-input-wrapper input {
+  padding: var(--spacing-sm) var(--spacing-md);
+  padding-left: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  width: 100%;
 }
 
 .page-title {
@@ -1095,6 +1130,15 @@ onMounted(() => {
 }
 
 @media (max-width: 640px) {
+  .page-header {
+    flex-wrap: wrap;
+  }
+  .search-input-wrapper {
+    order: 3;
+    flex-basis: 100%;
+    max-width: 100%;
+  }
+
   .form-grid {
     grid-template-columns: 1fr;
   }

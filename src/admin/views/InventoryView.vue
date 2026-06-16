@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, defineAsyncComponent } from 'vue'
+import { ref, computed, onMounted, defineAsyncComponent } from 'vue'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
 import type { InventoryItem } from '@/types'
@@ -7,7 +7,7 @@ import draggable from 'vuedraggable'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { Plus, Edit, Trash2, AlertTriangle, PackageOpen, GripVertical } from 'lucide-vue-next'
+import { Plus, Edit, Trash2, AlertTriangle, PackageOpen, GripVertical, Search } from 'lucide-vue-next'
 
 const appStore = useAppStore()
 
@@ -22,6 +22,14 @@ const formData = ref({
   quantity: 0,
   unit: '',
   warning_threshold: 0,
+})
+
+const searchQuery = ref('')
+
+const filteredInventory = computed(() => {
+  if (!searchQuery.value) return inventory.value
+  const q = searchQuery.value.toLowerCase()
+  return inventory.value.filter(item => item.material_name.toLowerCase().includes(q))
 })
 
 async function onInventoryDragEnd(event: { oldIndex: number; newIndex: number }) {
@@ -129,6 +137,14 @@ onMounted(() => {
   <div class="inventory-page">
     <div class="page-header">
       <h1 class="page-title">库存管理</h1>
+      <div class="search-input-wrapper">
+        <Search :size="16" class="search-icon" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="搜索物料..."
+        />
+      </div>
       <button class="btn btn-primary" @click="openAddModal">
         <Plus :size="18" />
         添加物料
@@ -139,22 +155,23 @@ onMounted(() => {
       <div class="loading-spinner"></div>
     </div>
 
-    <div v-else-if="inventory.length === 0" class="empty-state">
+    <div v-else-if="filteredInventory.length === 0" class="empty-state">
       <div class="empty-icon">
         <PackageOpen :size="64" />
       </div>
-      <h3 class="empty-title">暂无库存数据</h3>
-      <p class="empty-description">点击上方"添加物料"按钮开始添加库存</p>
+      <h3 class="empty-title">{{ searchQuery ? '未找到匹配的物料' : '暂无库存数据' }}</h3>
+      <p class="empty-description">{{ searchQuery ? '请尝试其他关键词' : '点击上方“添加物料”按钮开始添加库存' }}</p>
     </div>
 
     <draggable
       v-else
-      v-model="inventory"
+      v-model="filteredInventory"
       item-key="id"
       class="inventory-list"
       :animation="200"
       ghost-class="ghost-inventory"
       handle=".drag-handle-inventory"
+      :disabled="!!searchQuery"
       @end="onInventoryDragEnd"
     >
       <template #item="{ element: item }">
@@ -257,6 +274,33 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--spacing-xl);
+  gap: var(--spacing-md);
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 280px;
+}
+
+.search-input-wrapper .search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.search-input-wrapper input {
+  padding: var(--spacing-sm) var(--spacing-md);
+  padding-left: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  width: 100%;
 }
 
 .page-title {
@@ -446,5 +490,16 @@ onMounted(() => {
 .form-group input:disabled {
   background-color: var(--color-bg-tertiary);
   color: var(--color-text-muted);
+}
+
+@media (max-width: 640px) {
+  .page-header {
+    flex-wrap: wrap;
+  }
+  .search-input-wrapper {
+    order: 3;
+    flex-basis: 100%;
+    max-width: 100%;
+  }
 }
 </style>
