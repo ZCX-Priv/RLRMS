@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
-// 中国大陆手机号正则（宽松匹配，支持虚拟运营商）
-const phoneRegex = /^1[3-9]\d{9}$/
+// 手机号验证：纯数字即可
+const phoneRegex = /^\d+$/
 
 export const createOrderSchema = z.object({
   table_id: z.string().uuid().optional().nullable(),

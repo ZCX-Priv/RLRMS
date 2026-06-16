@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express'
 import { get, run } from '../db/index.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { randomBytes } from 'crypto'
 
 /**
  * JWT Payload 类型定义
@@ -51,11 +52,10 @@ function checkRateLimit(ip: string): boolean {
   return true
 }
 
-const JWT_SECRET = process.env.JWT_SECRET
-if (!JWT_SECRET) {
-  console.warn('Warning: JWT_SECRET not set, using default key. Please set JWT_SECRET in production!')
+const SECRET_KEY = process.env.JWT_SECRET || randomBytes(48).toString('hex')
+if (!process.env.JWT_SECRET) {
+  console.warn('Warning: JWT_SECRET not set, using dynamic key. Tokens will not survive restarts.')
 }
-const SECRET_KEY = JWT_SECRET || 'dev-secret-key-change-in-production'
 
 const isProduction = process.env.NODE_ENV === 'production'
 const COOKIE_NAME = 'admin_token'
