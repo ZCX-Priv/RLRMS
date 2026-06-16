@@ -1,10 +1,13 @@
 import { z } from 'zod'
 
+// 中国大陆手机号正则（宽松匹配，支持虚拟运营商）
+const phoneRegex = /^1[3-9]\d{9}$/
+
 export const createOrderSchema = z.object({
   table_id: z.string().uuid().optional().nullable(),
   dining_time: z.enum(['中午', '晚上']),
   contact_name: z.string().min(1, '请输入联系人姓名').max(50),
-  contact_phone: z.string().min(1, '请输入联系电话'),
+  contact_phone: z.string().regex(phoneRegex, '请输入有效的手机号码'),
   items: z.array(z.object({
     dish_id: z.string().uuid(),
     dish_name: z.string().min(1),
@@ -54,9 +57,35 @@ export const createInventorySchema = z.object({
   warning_threshold: z.number().optional()
 })
 
+// 库存更新验证
+export const updateInventorySchema = z.object({
+  quantity: z.number().nonnegative('数量不能为负数'),
+  warning_threshold: z.number().nonnegative('预警阈值不能为负数').optional()
+})
+
+// 订单状态白名单验证
+export const updateOrderStatusSchema = z.object({
+  status: z.enum(['pending', 'confirmed', 'preparing', 'completed', 'cancelled'], {
+    errorMap: () => ({ message: '无效的订单状态' })
+  })
+})
+
+// 重置数据库确认验证
+export const confirmResetSchema = z.object({
+  confirm: z.literal('RESET', { errorMap: () => ({ message: '需要确认字段 RESET' }) })
+})
+
+// 取消订单验证（需要手机号验证身份）
+export const cancelOrderSchema = z.object({
+  phone: z.string().regex(phoneRegex, '请输入有效的手机号码以验证身份')
+})
+
 export type CreateOrderInput = z.infer<typeof createOrderSchema>
 export type CreateDishInput = z.infer<typeof createDishSchema>
 export type UpdateDishInput = z.infer<typeof updateDishSchema>
 export type CreateTableInput = z.infer<typeof createTableSchema>
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>
 export type CreateInventoryInput = z.infer<typeof createInventorySchema>
+export type UpdateInventoryInput = z.infer<typeof updateInventorySchema>
+export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>
+export type CancelOrderInput = z.infer<typeof cancelOrderSchema>

@@ -3,11 +3,11 @@ import { all, get, run, beginBatch, endBatch } from '../db/index.js'
 import { v4 as uuidv4 } from 'uuid'
 import jwt from 'jsonwebtoken'
 import multer from 'multer'
-import { resolve, extname } from 'path'
+import { resolve, extname, normalize } from 'path'
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync, createReadStream } from 'fs'
 import bcrypt from 'bcryptjs'
 import { formatDateTime } from '../utils/format.js'
-import { createDishSchema, updateDishSchema, createTableSchema, createCategorySchema, createInventorySchema } from '../validators/index.js'
+import { createDishSchema, updateDishSchema, createTableSchema, createCategorySchema, createInventorySchema, updateInventorySchema, updateOrderStatusSchema, confirmResetSchema } from '../validators/index.js'
 import sharp from 'sharp'
 import AdmZip from 'adm-zip'
 import archiver from 'archiver'
@@ -106,6 +106,12 @@ const upload = multer({
 })
 
 export const adminRouter = Router()
+
+// UUID 格式验证辅助函数
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function isValidUUID(id: string): boolean {
+  return UUID_REGEX.test(id)
+}
 
 // Auth middleware
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -259,6 +265,25 @@ adminRouter.post('/tables', requireAuth, (req, res) => {
 adminRouter.delete('/tables/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
+    
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: '无效的 ID 格式' })
+    }
+    
+    const existing = get<{ id: string }>('SELECT id FROM tables WHERE id = ?', [id])
+    if (!existing) {
+      return res.status(404).json({ success: false, error: '桌位不存在' })
+    }
+    
+    // 检查是否有未完成的订单
+    const activeOrder = get<{ id: string }>(
+      'SELECT id FROM orders WHERE table_id = ? AND status IN (?, ?)',
+      [id, 'pending', 'confirmed']
+    )
+    if (activeOrder) {
+      return res.status(400).json({ success: false, error: '该桌位有未完成的订单，无法删除' })
+    }
+    
     run('DELETE FROM tables WHERE id = ?', [id])
     res.json({ success: true, message: 'Table deleted' })
   } catch (error) {
@@ -448,6 +473,10 @@ adminRouter.delete('/dishes/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
     
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: '无效的 ID 格式' })
+    }
+    
     const dish = get<{ image_url: string | null }>('SELECT image_url FROM dishes WHERE id = ?', [id])
     const imageUrl = dish?.image_url || null
     
@@ -512,6 +541,10 @@ adminRouter.post('/categories', requireAuth, (req, res) => {
 adminRouter.delete('/categories/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
+    
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: '无效的 ID 格式' })
+    }
     
     const dishCount = get<{ count: number }>('SELECT COUNT(*) as count FROM dishes WHERE category_id = ?', [id])
     if (dishCount && dishCount.count > 0) {
@@ -604,7 +637,17 @@ adminRouter.get('/orders', requireAuth, (req, res) => {
 adminRouter.put('/orders/:id/status', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
-    const { status } = req.body
+    
+    // 验证状态白名单
+    const validation = updateOrderStatusSchema.safeParse(req.body)
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: validation.error.errors[0]?.message || '无效的订单状态'
+      })
+    }
+    
+    const { status } = validation.data
     
     const order = get<{ id: string; table_id: string | null; status: string }>('SELECT * FROM orders WHERE id = ?', [id])
     
@@ -694,9 +737,28 @@ adminRouter.put('/inventory/reorder', requireAuth, (req, res) => {
 adminRouter.put('/inventory/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
-    const { quantity, warning_threshold } = req.body
     
-    run('UPDATE inventory SET quantity = ?, warning_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [quantity, warning_threshold, id])
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: '无效的 ID 格式' })
+    }
+    
+    // 使用 zod 验证输入
+    const validation = updateInventorySchema.safeParse(req.body)
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: validation.error.errors[0]?.message || '参数验证失败'
+      })
+    }
+    
+    const { quantity, warning_threshold } = validation.data
+    
+    const existing = get<{ id: string }>('SELECT id FROM inventory WHERE id = ?', [id])
+    if (!existing) {
+      return res.status(404).json({ success: false, error: '库存项不存在' })
+    }
+    
+    run('UPDATE inventory SET quantity = ?, warning_threshold = COALESCE(?, warning_threshold), updated_at = CURRENT_TIMESTAMP WHERE id = ?', [quantity, warning_threshold ?? null, id])
     
     const item = get('SELECT * FROM inventory WHERE id = ?', [id])
     res.json({ success: true, data: item })
@@ -709,6 +771,16 @@ adminRouter.put('/inventory/:id', requireAuth, (req, res) => {
 adminRouter.delete('/inventory/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
+    
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: '无效的 ID 格式' })
+    }
+    
+    const existing = get<{ id: string }>('SELECT id FROM inventory WHERE id = ?', [id])
+    if (!existing) {
+      return res.status(404).json({ success: false, error: '库存项不存在' })
+    }
+    
     run('DELETE FROM inventory WHERE id = ?', [id])
     res.json({ success: true, message: 'Inventory item deleted' })
   } catch (error) {
@@ -753,6 +825,15 @@ adminRouter.put('/settings', requireAuth, (req, res) => {
 
 adminRouter.post('/reset-database', requireAuth, (req, res) => {
   try {
+    // 二次确认机制：必须提供 confirm: 'RESET'
+    const validation = confirmResetSchema.safeParse(req.body)
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: '危险操作：请在请求中提供 confirm: "RESET" 以确认重置数据库'
+      })
+    }
+    
     beginBatch()
     run('DELETE FROM order_items')
     run('DELETE FROM orders')
@@ -1179,9 +1260,26 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
       )
 
       for (const imageEntry of sourceImages) {
-        const relativePath = imageEntry.entryName.replace('sources/', '')
-        if (relativePath) {
-          const outputPath = resolve(sourcesDir, relativePath)
+        const rawRelativePath = imageEntry.entryName.replace('sources/', '')
+        if (rawRelativePath) {
+          // 标准化路径并检查路径穿越
+          const normalizedPath = normalize(rawRelativePath)
+          
+          // 安全检查：禁止包含 .. 的路径片段
+          if (normalizedPath.includes('..')) {
+            console.warn('Skipping suspicious path:', rawRelativePath)
+            continue
+          }
+          
+          // 安全检查：只允许图片文件扩展名
+          const ext = extname(normalizedPath).toLowerCase()
+          const allowedImageTypes = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+          if (!allowedImageTypes.includes(ext)) {
+            console.warn('Skipping non-image file:', rawRelativePath)
+            continue
+          }
+          
+          const outputPath = resolve(sourcesDir, normalizedPath)
           
           // 安全检查：确保文件路径在 sourcesDir 目录下
           if (outputPath.startsWith(sourcesDir)) {

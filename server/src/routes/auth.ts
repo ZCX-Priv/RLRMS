@@ -18,6 +18,16 @@ const loginAttempts = new Map<string, { count: number; lastAttempt: number }>()
 const MAX_ATTEMPTS = 5
 const WINDOW_MS = 15 * 60 * 1000 // 15 minutes
 
+// 定期清理过期的 IP 记录，防止内存泄漏
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, attempts] of loginAttempts) {
+    if (now - attempts.lastAttempt > WINDOW_MS) {
+      loginAttempts.delete(ip)
+    }
+  }
+}, 30 * 60 * 1000).unref() // 每 30 分钟清理一次，unref 防止阻止进程退出
+
 function checkRateLimit(ip: string): boolean {
   const now = Date.now()
   const attempts = loginAttempts.get(ip)
@@ -186,6 +196,22 @@ authRouter.put('/password', async (req: Request, res: Response) => {
       return res.status(400).json({ 
         success: false, 
         error: '请输入旧密码和新密码' 
+      })
+    }
+    
+    // 新密码最小长度 6 位
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: '新密码长度不能少于6位'
+      })
+    }
+    
+    // 新密码最大长度限制
+    if (newPassword.length > 128) {
+      return res.status(400).json({
+        success: false,
+        error: '新密码长度不能超过128位'
       })
     }
     

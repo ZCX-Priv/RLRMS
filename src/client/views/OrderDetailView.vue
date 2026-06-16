@@ -77,9 +77,15 @@ async function fetchOrder() {
 async function handleCancel() {
   if (!order.value || cancelling.value) return
   
+  // 需要手机号验证身份
+  if (!order.value.contact_phone) {
+    appStore.showToast('订单缺少手机号信息，无法取消', 'error')
+    return
+  }
+  
   try {
     cancelling.value = true
-    await api.cancelOrder(order.value.id)
+    await api.cancelOrder(order.value.id, order.value.contact_phone)
     appStore.showToast('订单已取消', 'success')
     fetchOrder()
   } catch (error) {

@@ -147,9 +147,10 @@ export const api = {
     return request<{ success: boolean; data: Order }>(`/orders/${id}`)
   },
   
-  async cancelOrder(id: string) {
+  async cancelOrder(id: string, phone: string) {
     return request<{ success: boolean; message: string }>(`/orders/${id}/cancel`, {
       method: 'POST',
+      body: JSON.stringify({ phone }),
     })
   },
   
@@ -329,6 +330,7 @@ export const api = {
   async resetDatabase() {
     return request<{ success: boolean; message: string }>('/admin/reset-database', {
       method: 'POST',
+      body: JSON.stringify({ confirm: 'RESET' }),
     })
   },
   
