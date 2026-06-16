@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>红灯笼食府</title>
+    <!-- DNS 预连接：提前建立与 API 服务器的连接 -->
+    <link rel="preconnect" href="http://localhost:3001" />
+    <link rel="dns-prefetch" href="http://localhost:3001" />
+    <style>
+      #loading-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);
+        z-index: 9999;
+        transition: opacity 0.3s ease-out;
+      }
+      #loading-splash.fade-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .loading-title {
+        font-family: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #DC2626;
+        margin-bottom: 2rem;
+        text-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
+      }
+      .loading-spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid #FECACA;
+        border-top-color: #DC2626;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+    <script>
+      (function() {
+        var path = window.location.pathname;
+        var isAdmin = path.indexOf('/admin') === 0;
+        var themeKey = isAdmin ? 'admin_theme' : 'client_theme';
+        var savedTheme = localStorage.getItem(themeKey);
+        if (savedTheme) {
+          document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <div id="loading-splash">
+        <div class="loading-title">红灯笼食府</div>
+        <div class="loading-spinner"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+      // Remove loading splash after Vue app mounts
+      window.addEventListener('app-mounted', function() {
+        var splash = document.getElementById('loading-splash');
+        if (splash) {
+          splash.classList.add('fade-out');
+          setTimeout(function() {
+            splash.remove();
+          }, 300);
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+- [x] IndexedDB 存储工具实现完成，包含 getItem、setItem、removeItem、clear 方法
+- [x] 主题存储已迁移至 IndexedDB，应用启动时正确加载主题
+- [x] 搜索历史存储已迁移至 IndexedDB，搜索功能正常工作
+- [x] 清除缓存功能正确清除 IndexedDB 数据
+- [x] 无 localStorage 相关代码残留
