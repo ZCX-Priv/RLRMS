@@ -517,14 +517,12 @@ onUnmounted(() => {
   padding: var(--spacing-sm);
   margin-top: var(--spacing-sm);
   font-size: 0.875rem;
-  color: var(--color-primary);
-  background-color: var(--color-bg-tertiary);
-  border-radius: var(--radius-md);
-  transition: background-color var(--transition-fast);
+  color: var(--color-text-primary);
+  transition: opacity var(--transition-fast);
 }
 
 .items-toggle:hover {
-  background-color: var(--color-border-light);
+  opacity: 0.7;
 }
 
 .card-total {

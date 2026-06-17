@@ -588,14 +588,12 @@ async function handleSubmit() {
   padding: var(--spacing-sm);
   margin-top: var(--spacing-sm);
   font-size: 0.875rem;
-  color: var(--color-primary);
-  background-color: var(--color-bg-tertiary);
-  border-radius: var(--radius-md);
-  transition: background-color var(--transition-fast);
+  color: var(--color-text-primary);
+  transition: opacity var(--transition-fast);
 }
 
 .items-toggle:hover {
-  background-color: var(--color-border-light);
+  opacity: 0.7;
 }
 
 .time-options {
@@ -654,6 +652,7 @@ async function handleSubmit() {
 .table-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, minmax(72px, auto));
   gap: var(--spacing-sm);
 }
 
