@@ -307,7 +307,7 @@ onUnmounted(() => {
             取消订单
           </button>
           <button class="btn btn-primary" @click="handleAddMore">
-            继续点菜
+            加菜
           </button>
         </div>
       </template>

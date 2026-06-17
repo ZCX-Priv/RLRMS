@@ -349,7 +349,7 @@ onMounted(async () => {
             </button>
             <h3 class="table-full-title">非常抱歉</h3>
             <p class="table-full-text">{{ tableFullPeriod }}的桌位已满</p>
-            <button class="btn btn-primary table-full-btn" @click="dismissTableFullModal">继续点菜</button>
+            <button class="btn btn-primary table-full-btn" @click="dismissTableFullModal">加菜</button>
           </div>
         </div>
       </Transition>

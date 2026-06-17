@@ -30,9 +30,17 @@ const formData = ref({
 const searchQuery = ref('')
 
 const filteredTables = computed(() => {
-  if (!searchQuery.value) return tables.value
+  const sortFn = (a: Table, b: Table) => {
+    const aStartsWithDigit = /^\d/.test(a.table_no)
+    const bStartsWithDigit = /^\d/.test(b.table_no)
+    if (aStartsWithDigit !== bStartsWithDigit) return aStartsWithDigit ? 1 : -1
+    return a.table_no.localeCompare(b.table_no, 'zh-CN', { numeric: true })
+  }
+  if (!searchQuery.value) return [...tables.value].sort(sortFn)
   const q = searchQuery.value.toLowerCase()
-  return tables.value.filter(t => t.name.toLowerCase().includes(q) || t.table_no.toLowerCase().includes(q))
+  return tables.value
+    .filter(t => t.name.toLowerCase().includes(q) || t.table_no.toLowerCase().includes(q))
+    .sort(sortFn)
 })
 
 const statusColor: Record<string, string> = {
