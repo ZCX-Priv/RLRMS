@@ -24,6 +24,8 @@ const isAfterNoon = computed(() => {
   return now.getHours() >= 13
 })
 
+const isAddDishMode = computed(() => !!cartStore.addDishOrderId)
+
 const diningTime = ref<'中午' | '晚上'>('中午')
 const contactName = ref('')
 const contactPhone = ref('')
@@ -150,6 +152,15 @@ function handlePhoneInput(event: Event) {
 }
 
 const canSubmit = computed(() => {
+  if (isAddDishMode.value) {
+    // 加菜模式：不需要选桌位
+    return (
+      contactName.value.trim() !== '' &&
+      nameError.value === '' &&
+      contactPhone.value.trim() !== '' &&
+      cartStore.items.length > 0
+    )
+  }
   return (
     tableStore.isTableSelected &&
     contactName.value.trim() !== '' &&
@@ -171,30 +182,49 @@ async function handleSubmit() {
     showProgressModal.value = true
     progressStep.value = 0
 
-    const res = await api.createOrder({
-      table_id: tableStore.selectedTable?.id,
-      dining_time: diningTime.value,
-      contact_name: contactName.value,
-      contact_phone: contactPhone.value,
-      items: cartStore.getOrderItems(),
-    })
+    if (isAddDishMode.value && cartStore.addDishOrderId) {
+      // 加菜模式：调用更新接口
+      const res = await api.updateOrderItems(cartStore.addDishOrderId, cartStore.getOrderItems())
 
-    progressStep.value = 1
-    await new Promise(resolve => setTimeout(resolve, 800))
-    
-    progressStep.value = 2
-    await new Promise(resolve => setTimeout(resolve, 600))
+      progressStep.value = 1
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      progressStep.value = 2
+      await new Promise(resolve => setTimeout(resolve, 600))
 
-    cartStore.clearCart()
-    
-    await new Promise(resolve => setTimeout(resolve, 400))
-    showProgressModal.value = false
-    
-    router.push(`/order/${res.data.id}`)
+      cartStore.clearCart()
+      
+      await new Promise(resolve => setTimeout(resolve, 400))
+      showProgressModal.value = false
+      
+      router.push(`/order/${res.data.id}`)
+    } else {
+      // 正常下单模式
+      const res = await api.createOrder({
+        table_id: tableStore.selectedTable?.id,
+        dining_time: diningTime.value,
+        contact_name: contactName.value,
+        contact_phone: contactPhone.value,
+        items: cartStore.getOrderItems(),
+      })
+
+      progressStep.value = 1
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      progressStep.value = 2
+      await new Promise(resolve => setTimeout(resolve, 600))
+
+      cartStore.clearCart()
+      
+      await new Promise(resolve => setTimeout(resolve, 400))
+      showProgressModal.value = false
+      
+      router.push(`/order/${res.data.id}`)
+    }
   } catch (error) {
-    console.error('Failed to create order:', error)
+    console.error('Failed to submit order:', error)
     showProgressModal.value = false
-    appStore.showToast('下单失败，请重试', 'error')
+    appStore.showToast(isAddDishMode.value ? '加菜失败，请重试' : '下单失败，请重试', 'error')
   } finally {
     submitting.value = false
   }
@@ -209,13 +239,13 @@ async function handleSubmit() {
         <button class="back-btn" @click="router.back()">
           <ArrowLeft :size="20" />
         </button>
-        <h1>确认订单</h1>
+        <h1>{{ isAddDishMode ? '加菜确认' : '确认订单' }}</h1>
       </header>
 
       <!-- Content -->
       <div class="confirm-content">
         <!-- Dining Time -->
-        <div class="section-card">
+        <div v-if="!isAddDishMode" class="section-card">
           <div class="section-icon">
             <Clock :size="20" />
           </div>
@@ -242,7 +272,7 @@ async function handleSubmit() {
         </div>
 
         <!-- Table Selection (inline) -->
-        <div class="section-card table-section">
+        <div v-if="!isAddDishMode" class="section-card table-section">
           <div class="table-section-header">
             <span class="section-label">选择桌位</span>
             <span v-if="tablesLoading" class="tables-loading-text">加载中...</span>
@@ -370,7 +400,7 @@ async function handleSubmit() {
           :disabled="!canSubmit || submitting"
           @click="handleSubmit"
         >
-          {{ submitting ? '提交中...' : '下单' }}
+          {{ submitting ? '提交中...' : (isAddDishMode ? '提交加菜' : '下单') }}
         </button>
       </div>
 
@@ -382,9 +412,6 @@ async function handleSubmit() {
               <div class="progress-icon-wrapper">
                 <div class="progress-icon" :class="{ 'icon-animate': progressStep < 2 }">
                   <ChefHat :size="48" />
-                </div>
-                <div class="progress-particles" v-if="progressStep < 2">
-                  <span v-for="i in 6" :key="i" class="particle" :style="{ '--delay': i * 0.1 + 's' }"></span>
                 </div>
               </div>
               <div class="progress-content">
@@ -861,43 +888,12 @@ async function handleSubmit() {
 }
 
 .progress-icon.icon-animate {
-  animation: iconBounce 1s ease-in-out infinite;
+  animation: iconPulse 1.5s ease-in-out infinite;
 }
 
-@keyframes iconBounce {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  25% { transform: translateY(-10px) rotate(-5deg); }
-  50% { transform: translateY(0) rotate(0deg); }
-  75% { transform: translateY(-5px) rotate(5deg); }
-}
-
-.progress-particles {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.particle {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  background: linear-gradient(135deg, #ffd700 0%, #ffaa00 100%);
-  border-radius: 50%;
-  animation: particleFloat 1.5s ease-in-out infinite;
-  animation-delay: var(--delay);
-  box-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
-}
-
-.particle:nth-child(1) { top: 0; left: 50%; transform: translateX(-50%); }
-.particle:nth-child(2) { top: 20%; right: 0; }
-.particle:nth-child(3) { bottom: 20%; right: 0; }
-.particle:nth-child(4) { bottom: 0; left: 50%; transform: translateX(-50%); }
-.particle:nth-child(5) { bottom: 20%; left: 0; }
-.particle:nth-child(6) { top: 20%; left: 0; }
-
-@keyframes particleFloat {
-  0%, 100% { opacity: 0.3; transform: translateY(0) scale(0.8); }
-  50% { opacity: 1; transform: translateY(-8px) scale(1.2); }
+@keyframes iconPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
 }
 
 .progress-content {

@@ -153,9 +153,11 @@ async function handleCancel() {
 }
 
 function handleAddMore() {
-  cartStore.clearCart()
-  tableStore.clearSelection()
-  router.push('/')
+  if (order.value) {
+    cartStore.setItemsFromOrder(order.value.items)
+    cartStore.addDishOrderId = order.value.id
+  }
+  router.push('/order/confirm')
 }
 
 function handleBack() {

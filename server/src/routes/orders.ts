@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { all, get, run } from '../db/index.js'
 import { v4 as uuidv4 } from 'uuid'
 import { formatDateTime } from '../utils/format.js'
-import { createOrderSchema, cancelOrderSchema } from '../validators/index.js'
+import { createOrderSchema, cancelOrderSchema, updateOrderItemsSchema } from '../validators/index.js'
 import { broadcastSSE } from '../utils/sse.js'
 import jwt from 'jsonwebtoken'
 import { JWT_SECRET } from '../utils/jwt.js'
@@ -374,5 +374,124 @@ ordersRouter.post('/:id/cancel', requireClientAuth, (req, res) => {
   } catch (error) {
     console.error('Error cancelling order:', error)
     res.status(500).json({ success: false, error: 'Failed to cancel order' })
+  }
+})
+
+// Update order items (加菜)
+ordersRouter.put('/:id/items', requireClientAuth, (req, res) => {
+  try {
+    const id = req.params.id as string
+    
+    // 验证请求体
+    const validation = updateOrderItemsSchema.safeParse(req.body)
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: validation.error.errors[0]?.message || '参数验证失败'
+      })
+    }
+    
+    const { items } = validation.data
+    
+    // 查找原订单
+    const order = get<{ id: string; status: string; contact_phone: string | null }>(
+      'SELECT * FROM orders WHERE id = ?', [id]
+    )
+    
+    if (!order) {
+      return res.status(404).json({ success: false, error: '订单不存在' })
+    }
+    
+    // 只有 pending 或 confirmed 状态的订单可以加菜
+    if (order.status !== 'pending' && order.status !== 'confirmed') {
+      return res.status(400).json({
+        success: false,
+        error: '该订单状态无法加菜'
+      })
+    }
+    
+    // 服务端重新验证菜品并计算价格
+    const verifiedItems: {
+      dish_id: string
+      dish_name: string
+      quantity: number
+      unit_price: number
+      subtotal: number
+      spec: string | null
+    }[] = []
+    
+    for (const item of items) {
+      const dish = get<{ id: string; name: string; price: number; status: string }>(
+        'SELECT id, name, price, status FROM dishes WHERE id = ?', [item.dish_id]
+      )
+      
+      if (!dish) {
+        return res.status(400).json({
+          success: false,
+          error: `菜品不存在: ${item.dish_name}`
+        })
+      }
+      
+      if (dish.status !== 'on_sale') {
+        return res.status(400).json({
+          success: false,
+          error: `菜品已下架: ${dish.name}`
+        })
+      }
+      
+      const serverUnitPrice = dish.price
+      const serverSubtotal = Math.round(serverUnitPrice * item.quantity * 100) / 100
+      
+      verifiedItems.push({
+        dish_id: item.dish_id,
+        dish_name: dish.name,
+        quantity: item.quantity,
+        unit_price: serverUnitPrice,
+        subtotal: serverSubtotal,
+        spec: item.spec || null
+      })
+    }
+    
+    const totalAmount = Math.round(verifiedItems.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100
+    
+    // 删除原订单的所有菜品项
+    run('DELETE FROM order_items WHERE order_id = ?', [id])
+    
+    // 插入新的菜品项
+    for (const item of verifiedItems) {
+      run(`
+        INSERT INTO order_items (id, order_id, dish_id, dish_name, quantity, unit_price, subtotal, spec)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [uuidv4(), id, item.dish_id, item.dish_name, item.quantity, item.unit_price, item.subtotal, item.spec])
+    }
+    
+    // 更新订单总金额，重置状态为 pending（即使原来是 confirmed 也需重新确认）
+    run('UPDATE orders SET total_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [totalAmount, 'pending', id])
+    
+    // 获取更新后的订单
+    const updatedOrder = get<{
+      id: string
+      order_no: string
+      table_id: string | null
+      table_name: string | null
+      table_no: string | null
+    }>(`
+      SELECT o.*, t.name as table_name, t.table_no
+      FROM orders o
+      LEFT JOIN tables t ON o.table_id = t.id
+      WHERE o.id = ?
+    `, [id])
+    
+    const orderItems = all('SELECT * FROM order_items WHERE order_id = ?', [id])
+    
+    const result = { ...updatedOrder, items: orderItems }
+    
+    // SSE 广播订单更新事件，通知管理端重新确认
+    broadcastSSE('order_updated', { id, status: 'pending', type: 'add_items' })
+    
+    res.json({ success: true, data: result })
+  } catch (error) {
+    console.error('Error updating order items:', error)
+    res.status(500).json({ success: false, error: 'Failed to update order items' })
   }
 })

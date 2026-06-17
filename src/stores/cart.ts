@@ -1,9 +1,15 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { CartItem, Dish, OrderItem } from '@/types'
+import { getItem as dbGet, setItem as dbSet, removeItem as dbRemove } from '@/utils/storage'
+
+const CART_ITEMS_KEY = 'cart_items'
+const CART_ORDER_ID_KEY = 'cart_add_dish_order_id'
 
 export const useCartStore = defineStore('cart', () => {
   const items = ref<CartItem[]>([])
+  const addDishOrderId = ref<string | null>(null)
+  const restored = ref(false)
 
   // Get total price
   const totalAmount = computed(() => {
@@ -60,6 +66,9 @@ export const useCartStore = defineStore('cart', () => {
   // Clear cart
   function clearCart() {
     items.value = []
+    addDishOrderId.value = null
+    dbRemove(CART_ITEMS_KEY).catch(() => {})
+    dbRemove(CART_ORDER_ID_KEY).catch(() => {})
   }
 
   // Get items for order submission
@@ -96,8 +105,52 @@ export const useCartStore = defineStore('cart', () => {
     }))
   }
 
+  // Restore cart from IndexedDB on store init
+  async function restore() {
+    try {
+      const [savedItems, savedOrderId] = await Promise.all([
+        dbGet<CartItem[]>(CART_ITEMS_KEY),
+        dbGet<string>(CART_ORDER_ID_KEY),
+      ])
+      if (savedItems && savedItems.length > 0) {
+        items.value = savedItems
+      }
+      if (savedOrderId) {
+        addDishOrderId.value = savedOrderId
+      }
+    } catch {
+      // IndexedDB 不可用时静默忽略
+    } finally {
+      restored.value = true
+    }
+  }
+
+  // Persist items to IndexedDB whenever they change (after restore)
+  watch(items, (val) => {
+    if (!restored.value) return
+    if (val.length === 0) {
+      dbRemove(CART_ITEMS_KEY).catch(() => {})
+    } else {
+      dbSet(CART_ITEMS_KEY, val).catch(() => {})
+    }
+  }, { deep: true })
+
+  watch(addDishOrderId, (val) => {
+    if (!restored.value) return
+    if (val === null) {
+      dbRemove(CART_ORDER_ID_KEY).catch(() => {})
+    } else {
+      dbSet(CART_ORDER_ID_KEY, val).catch(() => {})
+    }
+  })
+
+  // Trigger restore immediately
+  restore()
+
   return {
     items,
+    addDishOrderId,
+    restored,
     totalAmount,
     totalCount,
     addItem,

@@ -316,7 +316,6 @@ function handleUpdateQuantity(quantity: number) {
 }
 
 .add-btn:hover {
-  transform: scale(1.05);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 

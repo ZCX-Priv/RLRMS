@@ -80,6 +80,18 @@ export const cancelOrderSchema = z.object({
   phone: z.string().regex(phoneRegex, '请输入有效的手机号码以验证身份')
 })
 
+// 加菜验证（复用 createOrderSchema 的 items 部分）
+export const updateOrderItemsSchema = z.object({
+  items: z.array(z.object({
+    dish_id: z.string().uuid(),
+    dish_name: z.string().min(1),
+    quantity: z.number().int().positive(),
+    unit_price: z.number().nonnegative(),
+    subtotal: z.number().nonnegative(),
+    spec: z.string().optional().nullable()
+  })).min(1, '购物车不能为空')
+})
+
 // 用户管理验证
 export const createUserSchema = z.object({
   username: z.string().min(1, '用户名不能为空').max(50),
@@ -105,5 +117,6 @@ export type CreateInventoryInput = z.infer<typeof createInventorySchema>
 export type UpdateInventoryInput = z.infer<typeof updateInventorySchema>
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>
+export type UpdateOrderItemsInput = z.infer<typeof updateOrderItemsSchema>
 export type CreateUserInput = z.infer<typeof createUserSchema>
 export type UpdateUserInput = z.infer<typeof updateUserSchema>

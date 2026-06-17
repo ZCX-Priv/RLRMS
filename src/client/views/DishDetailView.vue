@@ -373,11 +373,11 @@ onMounted(() => {
 .quantity-btn-full:hover {
   background-color: var(--color-primary);
   color: white;
-  transform: scale(1.05);
 }
 
 .quantity-btn-full:active {
-  transform: scale(0.95);
+  background-color: var(--color-primary-dark);
+  color: white;
 }
 
 .quantity-display {

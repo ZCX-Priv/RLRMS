@@ -159,6 +159,20 @@ export const api = {
     })
   },
   
+  async updateOrderItems(id: string, items: {
+    dish_id: string
+    dish_name: string
+    quantity: number
+    unit_price: number
+    subtotal: number
+    spec?: string
+  }[]) {
+    return request<{ success: boolean; data: Order }>(`/orders/${id}/items`, {
+      method: 'PUT',
+      body: JSON.stringify({ items }),
+    })
+  },
+  
   // Auth
   async login(username: string, password: string) {
     return request<{ success: boolean; data: AuthResponse }>('/auth/login', {

@@ -808,7 +808,6 @@ input.error, textarea.error, select.error {
 }
 
 .btn:hover:not(:disabled) {
-  transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
 
@@ -904,11 +903,10 @@ input.error, textarea.error, select.error {
 
 .card-hover:hover {
   box-shadow: var(--shadow-lg);
-  transform: translateY(-4px);
 }
 
 .card-hover:active {
-  transform: translateY(-2px) scale(0.98);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Badge Styles */
