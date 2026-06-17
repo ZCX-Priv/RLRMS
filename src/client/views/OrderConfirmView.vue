@@ -11,7 +11,7 @@ import type { Table } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
 
-import { ArrowLeft, Trash2, Phone, User, Clock, ChefHat, FileText, Rocket, CheckCircle } from 'lucide-vue-next'
+import { ArrowLeft, Trash2, Phone, User, Clock, ChefHat, FileText, Rocket, CheckCircle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
 const router = useRouter()
 const cartStore = useCartStore()
@@ -32,9 +32,37 @@ const nameError = ref('')
 const showProgressModal = ref(false)
 const progressStep = ref(0)
 
+// 菜单收起/展开状态
+const ITEMS_COLLAPSE_THRESHOLD = 3
+const itemsExpanded = ref(false)
+const displayItems = computed(() => {
+  if (itemsExpanded.value || cartStore.items.length <= ITEMS_COLLAPSE_THRESHOLD) {
+    return cartStore.items
+  }
+  return cartStore.items.slice(0, ITEMS_COLLAPSE_THRESHOLD)
+})
+const hasMoreItems = computed(() => cartStore.items.length > ITEMS_COLLAPSE_THRESHOLD)
+
 // 内联桌位选择
 const availableTables = ref<Table[]>([])
 const tablesLoading = ref(false)
+
+// 桌位翻页
+const TABLE_PAGE_SIZE = 9
+const tablePage = ref(1)
+const totalPages = computed(() => Math.ceil(availableTables.value.length / TABLE_PAGE_SIZE))
+const showTablePagination = computed(() => availableTables.value.length > TABLE_PAGE_SIZE)
+const paginatedTables = computed(() => {
+  const start = (tablePage.value - 1) * TABLE_PAGE_SIZE
+  return availableTables.value.slice(start, start + TABLE_PAGE_SIZE)
+})
+
+function changeTablePage(delta: number) {
+  const newPage = tablePage.value + delta
+  if (newPage >= 1 && newPage <= totalPages.value) {
+    tablePage.value = newPage
+  }
+}
 
 async function fetchAvailableTables() {
   try {
@@ -56,6 +84,11 @@ function handleSelectTable(table: Table) {
 watch(diningTime, () => {
   tableStore.clearSelection()
   fetchAvailableTables()
+})
+
+// 桌位数据变化时重置页码
+watch(availableTables, () => {
+  tablePage.value = 1
 })
 
 const progressSteps = [
@@ -219,7 +252,7 @@ async function handleSubmit() {
           </div>
           <div v-else class="table-grid">
             <button
-              v-for="table in availableTables"
+              v-for="table in paginatedTables"
               :key="table.id"
               class="table-item"
               :class="{ 'table-item-selected': tableStore.selectedTable?.id === table.id }"
@@ -227,6 +260,23 @@ async function handleSubmit() {
             >
               <span class="table-name">{{ table.name }}</span>
               <span class="table-capacity">{{ table.capacity }}人</span>
+            </button>
+          </div>
+          <div v-if="showTablePagination" class="table-pagination">
+            <button
+              class="page-btn"
+              :disabled="tablePage === 1"
+              @click="changeTablePage(-1)"
+            >
+              <ChevronLeft :size="16" />
+            </button>
+            <span class="page-info">{{ tablePage }} / {{ totalPages }}</span>
+            <button
+              class="page-btn"
+              :disabled="tablePage === totalPages"
+              @click="changeTablePage(1)"
+            >
+              <ChevronRight :size="16" />
             </button>
           </div>
         </div>
@@ -245,7 +295,7 @@ async function handleSubmit() {
           </div>
           <div v-else class="items-list">
             <div
-              v-for="item in cartStore.items"
+              v-for="item in displayItems"
               :key="`${item.dish.id}-${item.spec}`"
               class="order-item"
             >
@@ -266,6 +316,14 @@ async function handleSubmit() {
               </div>
             </div>
           </div>
+          <button
+            v-if="hasMoreItems"
+            class="items-toggle"
+            @click="itemsExpanded = !itemsExpanded"
+          >
+            <component :is="itemsExpanded ? ChevronUp : ChevronDown" :size="14" />
+            {{ itemsExpanded ? '收起' : `展开全部 (${cartStore.items.length}项)` }}
+          </button>
           <div class="total-section">
             <span>合计：</span>
             <span class="total-amount">{{ cartStore.totalAmount.toFixed(2) }}元</span>
@@ -521,6 +579,25 @@ async function handleSubmit() {
   color: white;
 }
 
+.items-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  font-size: 0.875rem;
+  color: var(--color-primary);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+}
+
+.items-toggle:hover {
+  background-color: var(--color-border-light);
+}
+
 .time-options {
   display: flex;
   gap: var(--spacing-sm);
@@ -611,6 +688,43 @@ async function handleSubmit() {
 .table-capacity {
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  transition: all var(--transition-fast);
+}
+
+.page-btn:hover:not(:disabled) {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-info {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  min-width: 50px;
+  text-align: center;
 }
 
 .contact-card {

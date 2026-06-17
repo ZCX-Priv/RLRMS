@@ -299,10 +299,18 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark, #cc3333));
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
   border-radius: 50%;
-  color: white;
+  color: var(--color-primary);
   flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+:global([data-theme="dark"]) .profile-avatar {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark, #cc3333));
+  border: none;
+  color: white;
 }
 
 .profile-text {

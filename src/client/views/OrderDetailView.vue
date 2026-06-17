@@ -9,7 +9,7 @@ import type { Order } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
-import { ArrowLeft, Store, Clock, Phone, User, QrCode } from 'lucide-vue-next'
+import { ArrowLeft, Store, Clock, Phone, User, QrCode, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import QRCode from 'qrcode'
 import JsBarcode from 'jsbarcode'
 
@@ -25,6 +25,18 @@ const showQRModal = ref(false)
 const cancelling = ref(false)
 const qrCodeDataUrl = ref('')
 const barcodeDataUrl = ref('')
+
+// 菜单收起/展开状态
+const ITEMS_COLLAPSE_THRESHOLD = 3
+const itemsExpanded = ref(false)
+const displayItems = computed(() => {
+  if (!order.value) return []
+  if (itemsExpanded.value || order.value.items.length <= ITEMS_COLLAPSE_THRESHOLD) {
+    return order.value.items
+  }
+  return order.value.items.slice(0, ITEMS_COLLAPSE_THRESHOLD)
+})
+const hasMoreItems = computed(() => (order.value?.items.length ?? 0) > ITEMS_COLLAPSE_THRESHOLD)
 
 const canCancel = computed(() => {
   if (!order.value || order.value.status !== 'pending') return false
@@ -250,13 +262,21 @@ onUnmounted(() => {
         <div class="items-card">
           <div class="card-header">菜单</div>
           <div class="items-list">
-            <div v-for="item in order.items" :key="item.id" class="item-row">
+            <div v-for="item in displayItems" :key="item.id" class="item-row">
               <span class="item-name">{{ item.dish_name }}</span>
               <span v-if="item.spec" class="item-spec">({{ item.spec }})</span>
               <span class="item-qty">x{{ item.quantity }}</span>
               <span class="item-price">{{ item.subtotal }}元</span>
             </div>
           </div>
+          <button
+            v-if="hasMoreItems"
+            class="items-toggle"
+            @click="itemsExpanded = !itemsExpanded"
+          >
+            <component :is="itemsExpanded ? ChevronUp : ChevronDown" :size="14" />
+            {{ itemsExpanded ? '收起' : `展开全部 (${order?.items.length ?? 0}项)` }}
+          </button>
           <div class="card-total">
             <span>总计：</span>
             <span class="total-amount">{{ order.total_amount }}元</span>
@@ -486,6 +506,25 @@ onUnmounted(() => {
 
 .item-price {
   color: var(--color-primary);
+}
+
+.items-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  font-size: 0.875rem;
+  color: var(--color-primary);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+}
+
+.items-toggle:hover {
+  background-color: var(--color-border-light);
 }
 
 .card-total {
