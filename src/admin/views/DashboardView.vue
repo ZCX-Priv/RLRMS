@@ -33,6 +33,18 @@ const searchQuery = ref('')
 const searchResults = ref<Order[]>([])
 const searching = ref(false)
 const hasSearched = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(searchQuery, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!q.trim()) {
+    resetSearch()
+    return
+  }
+  searchTimer = setTimeout(() => {
+    handleSearchOrder()
+  }, 300)
+})
 
 async function handleSearchOrder() {
   const q = searchQuery.value.trim()
@@ -440,15 +452,17 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <Transition name="slide-down">
-      <div v-if="showNewOrderNotification" class="new-order-notification" @click="dismissNotification">
-        <div class="notification-content">
-          <Bell :size="20" class="notification-icon" />
-          <span class="notification-text">🎉 有 {{ newOrderCount }} 个新订单！</span>
+    <Teleport to="body">
+      <Transition name="toast-notify">
+        <div v-if="showNewOrderNotification" class="new-order-toast" @click="dismissNotification">
+          <div class="notification-content">
+            <Bell :size="20" class="notification-icon" />
+            <span class="notification-text">有 {{ newOrderCount }} 个新订单！</span>
+          </div>
+          <span class="notification-hint">点击关闭</span>
         </div>
-        <span class="notification-hint">点击关闭</span>
-      </div>
-    </Transition>
+      </Transition>
+    </Teleport>
 
     <!-- 统计卡片骨架屏 -->
     <div v-if="loading && !statsInitialized" class="stats-grid">
@@ -747,13 +761,6 @@ onUnmounted(() => {
             @keyup.enter="handleSearchOrder"
             autofocus
           />
-          <button
-            class="btn btn-primary btn-sm"
-            :disabled="searching || !searchQuery.trim()"
-            @click="handleSearchOrder"
-          >
-            {{ searching ? '搜索中...' : '搜索' }}
-          </button>
         </div>
 
         <div v-if="searching" class="search-loading">
@@ -1183,18 +1190,24 @@ onUnmounted(() => {
   background-color: var(--color-primary-dark, #b91c1c);
 }
 
-.new-order-notification {
+.new-order-toast {
+  position: fixed;
+  top: var(--spacing-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast, 9999);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--spacing-md);
   padding: var(--spacing-md) var(--spacing-lg);
   background: linear-gradient(135deg, var(--color-primary) 0%, #dc2626 100%);
   color: white;
   border-radius: var(--radius-lg);
-  margin-bottom: var(--spacing-lg);
   cursor: pointer;
   animation: pulse-shadow 2s infinite;
   box-shadow: 0 4px 20px rgba(220, 38, 38, 0.3);
+  will-change: transform, opacity;
 }
 
 .notification-content {
@@ -1238,19 +1251,34 @@ onUnmounted(() => {
   }
 }
 
-.slide-down-enter-active,
-.slide-down-leave-active {
-  transition: all var(--duration-normal) var(--ease-out);
+.toast-notify-enter-active {
+  animation: toastNotifyIn var(--duration-normal) var(--ease-out);
 }
 
-.slide-down-enter-from {
-  opacity: 0;
-  transform: translateY(-20px);
+.toast-notify-leave-active {
+  animation: toastNotifyOut var(--duration-fast) var(--ease-in);
 }
 
-.slide-down-leave-to {
-  opacity: 0;
-  transform: translateY(-20px);
+@keyframes toastNotifyIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-30px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes toastNotifyOut {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px) scale(0.95);
+  }
 }
 
 /* 订单查询样式 */
