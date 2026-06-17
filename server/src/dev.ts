@@ -26,7 +26,14 @@ async function startDevServer() {
     try {
       const templatePath = resolve(process.cwd(), 'index.html')
       let template = readFileSync(templatePath, 'utf-8')
-      template = await vite.transformIndexHtml(req.originalUrl, template)
+      try {
+        template = await vite.transformIndexHtml(req.originalUrl, template)
+      } catch (transformErr) {
+        // Vite 7 transformIndexHtml 可能抛出非致命错误（如 JSON 解析），
+        // 如果 template 仍有效则继续使用，否则向上抛出
+        if (!template) throw transformErr
+        console.warn('transformIndexHtml warning:', (transformErr as Error).message)
+      }
       res.status(200).set({ 'Content-Type': 'text/html' }).end(template)
     } catch (e) {
       vite.ssrFixStacktrace(e as Error)

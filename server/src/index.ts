@@ -45,6 +45,13 @@ export function createApp(): Express {
   app.use(compression({
     threshold: 1024,
     level: 6,
+    filter: (req, res) => {
+      // SSE 响应不能压缩，否则数据会被缓冲无法实时推送
+      if (res.getHeader('Content-Type')?.toString().includes('text/event-stream')) {
+        return false
+      }
+      return compression.filter(req, res)
+    },
   }))
   app.use(express.json({ limit: '1mb' }))
   app.use(express.urlencoded({ extended: true, limit: '1mb' }))
