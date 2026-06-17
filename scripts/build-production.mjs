@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process'
-import { existsSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, cpSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -27,12 +27,9 @@ if (!existsSync(distDir)) {
   mkdirSync(distDir, { recursive: true })
 }
 
-const copyDir = (src: string, dest: string) => {
-  if (!existsSync(dest)) {
-    mkdirSync(dest, { recursive: true })
-  }
+const copyDir = (src, dest) => {
   if (existsSync(src)) {
-    execSync(`xcopy "${src}" "${dest}" /E /I /Y`, { shell: true })
+    cpSync(src, dest, { recursive: true })
   }
 }
 
