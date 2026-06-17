@@ -652,7 +652,7 @@ async function handleSubmit() {
 .table-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, minmax(72px, auto));
+  grid-template-rows: repeat(3, 80px);
   gap: var(--spacing-sm);
 }
 
