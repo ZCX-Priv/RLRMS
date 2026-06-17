@@ -321,7 +321,7 @@ watch(
 }
 
 .nav-item:hover .nav-icon-wrapper {
-  color: var(--color-text-primary);
+  color: var(--color-primary);
 }
 
 .nav-item-active .nav-icon-wrapper {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, defineAsyncComponent, type Component } from 'vue'
+import { ref, computed, onMounted, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api'
 import { getItem, setItem } from '@/utils/storage'
@@ -7,11 +7,11 @@ import { useCartStore } from '@/stores/cart'
 import { useTableStore } from '@/stores/table'
 import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
+import type { Table } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
 
-const TableSelectModal = defineAsyncComponent(() => import('@/client/components/TableSelectModal.vue'))
-import { ArrowLeft, ChevronRight, Trash2, Store, Phone, User, Clock, ChefHat, FileText, Rocket, CheckCircle } from 'lucide-vue-next'
+import { ArrowLeft, Trash2, Phone, User, Clock, ChefHat, FileText, Rocket, CheckCircle } from 'lucide-vue-next'
 
 const router = useRouter()
 const cartStore = useCartStore()
@@ -28,10 +28,35 @@ const diningTime = ref<'中午' | '晚上'>('中午')
 const contactName = ref('')
 const contactPhone = ref('')
 const submitting = ref(false)
-const showTableModal = ref(false)
 const nameError = ref('')
 const showProgressModal = ref(false)
 const progressStep = ref(0)
+
+// 内联桌位选择
+const availableTables = ref<Table[]>([])
+const tablesLoading = ref(false)
+
+async function fetchAvailableTables() {
+  try {
+    tablesLoading.value = true
+    const res = await api.getAvailableTablesFor(diningTime.value)
+    availableTables.value = res.data
+  } catch (error) {
+    console.error('Failed to fetch available tables:', error)
+    availableTables.value = []
+  } finally {
+    tablesLoading.value = false
+  }
+}
+
+function handleSelectTable(table: Table) {
+  tableStore.selectTable(table)
+}
+
+watch(diningTime, () => {
+  tableStore.clearSelection()
+  fetchAvailableTables()
+})
 
 const progressSteps = [
   { text: '正在准备订单...', icon: 'FileText' },
@@ -49,6 +74,10 @@ onMounted(async () => {
   if (isAfterNoon.value) {
     diningTime.value = '晚上'
   }
+  // 清除残留桌位选中状态
+  tableStore.clearSelection()
+  // 获取可用桌位
+  await fetchAvailableTables()
   // Auto-fill phone from logged-in user
   if (clientAuthStore.user?.phone) {
     contactPhone.value = clientAuthStore.user.phone
@@ -99,10 +128,6 @@ const canSubmit = computed(() => {
 
 function handleRemoveItem(dishId: string, spec: string | null) {
   cartStore.removeItem(dishId, spec)
-}
-
-function openTableModal() {
-  showTableModal.value = true
 }
 
 async function handleSubmit() {
@@ -156,18 +181,54 @@ async function handleSubmit() {
 
       <!-- Content -->
       <div class="confirm-content">
-        <!-- Table Selection -->
-        <div class="section-card" @click="openTableModal">
+        <!-- Dining Time -->
+        <div class="section-card">
           <div class="section-icon">
-            <Store :size="20" />
+            <Clock :size="20" />
           </div>
           <div class="section-info">
-            <span class="section-label">桌位</span>
-            <span class="section-value">
-              {{ tableStore.selectedTable?.name || '未选择' }}
-            </span>
+            <span class="section-label">就餐时间</span>
+            <div class="time-options">
+              <button
+                class="time-option"
+                :class="{ 'time-option-active': diningTime === '中午', 'time-option-disabled': isAfterNoon }"
+                :disabled="isAfterNoon"
+                @click="!isAfterNoon && (diningTime = '中午')"
+              >
+                中午
+              </button>
+              <button
+                class="time-option"
+                :class="{ 'time-option-active': diningTime === '晚上' }"
+                @click="diningTime = '晚上'"
+              >
+                晚上
+              </button>
+            </div>
           </div>
-          <ChevronRight :size="20" class="section-arrow" />
+        </div>
+
+        <!-- Table Selection (inline) -->
+        <div class="section-card table-section">
+          <div class="table-section-header">
+            <span class="section-label">选择桌位</span>
+            <span v-if="tablesLoading" class="tables-loading-text">加载中...</span>
+          </div>
+          <div v-if="availableTables.length === 0 && !tablesLoading" class="tables-empty">
+            <span>该时段桌位已满，请切换其他时段</span>
+          </div>
+          <div v-else class="table-grid">
+            <button
+              v-for="table in availableTables"
+              :key="table.id"
+              class="table-item"
+              :class="{ 'table-item-selected': tableStore.selectedTable?.id === table.id }"
+              @click="handleSelectTable(table)"
+            >
+              <span class="table-name">{{ table.name }}</span>
+              <span class="table-capacity">{{ table.capacity }}人</span>
+            </button>
+          </div>
         </div>
 
         <!-- Order Items -->
@@ -208,33 +269,6 @@ async function handleSubmit() {
           <div class="total-section">
             <span>合计：</span>
             <span class="total-amount">{{ cartStore.totalAmount.toFixed(2) }}元</span>
-          </div>
-        </div>
-
-        <!-- Dining Time -->
-        <div class="section-card">
-          <div class="section-icon">
-            <Clock :size="20" />
-          </div>
-          <div class="section-info">
-            <span class="section-label">就餐时间</span>
-            <div class="time-options">
-              <button
-                class="time-option"
-                :class="{ 'time-option-active': diningTime === '中午', 'time-option-disabled': isAfterNoon }"
-                :disabled="isAfterNoon"
-                @click="!isAfterNoon && (diningTime = '中午')"
-              >
-                中午
-              </button>
-              <button
-                class="time-option"
-                :class="{ 'time-option-active': diningTime === '晚上' }"
-                @click="diningTime = '晚上'"
-              >
-                晚上
-              </button>
-            </div>
           </div>
         </div>
 
@@ -281,9 +315,6 @@ async function handleSubmit() {
           {{ submitting ? '提交中...' : '下单' }}
         </button>
       </div>
-
-      <!-- Table Modal -->
-      <TableSelectModal v-model:show="showTableModal" />
 
       <!-- Progress Modal -->
       <Teleport to="body">
@@ -516,6 +547,70 @@ async function handleSubmit() {
 .time-option-disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 内联桌位选择 */
+.table-section {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.table-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+}
+
+.tables-loading-text {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.tables-empty {
+  text-align: center;
+  padding: var(--spacing-xl) 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-sm);
+}
+
+.table-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border: 2px solid transparent;
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.table-item:hover {
+  border-color: var(--color-primary);
+  background-color: var(--color-bg-secondary);
+}
+
+.table-item-selected {
+  border-color: var(--color-primary);
+  background-color: var(--color-bg-secondary);
+}
+
+.table-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.table-capacity {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .contact-card {

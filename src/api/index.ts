@@ -117,6 +117,10 @@ export const api = {
   async getAvailableTables() {
     return request<{ success: boolean; data: Table[] }>('/tables/available')
   },
+
+  async getAvailableTablesFor(diningTime: string) {
+    return request<{ success: boolean; data: Table[] }>(`/tables/available-for?dining_time=${encodeURIComponent(diningTime)}`)
+  },
   
   // Orders
   async createOrder(data: {

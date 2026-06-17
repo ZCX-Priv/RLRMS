@@ -14,6 +14,32 @@ tablesRouter.get('/', (req, res) => {
   }
 })
 
+// Get available tables for a specific dining time
+tablesRouter.get('/available-for', (req, res) => {
+  try {
+    const { dining_time } = req.query
+    if (!dining_time || typeof dining_time !== 'string') {
+      return res.status(400).json({ success: false, error: '请提供就餐时间参数' })
+    }
+    
+    // 返回：status=available 的桌位，以及 status=reserved 但该桌位当前活跃订单的 dining_time 不等于目标时段的桌位
+    const tables = all(`
+      SELECT t.* FROM tables t
+      WHERE t.status = 'available'
+         OR (t.status = 'reserved' AND t.id NOT IN (
+           SELECT o.table_id FROM orders o
+           WHERE o.status IN ('pending', 'confirmed') AND o.dining_time = ?
+         ))
+      ORDER BY t.table_no
+    `, [dining_time])
+    
+    res.json({ success: true, data: tables })
+  } catch (error) {
+    console.error('Error fetching available tables for dining time:', error)
+    res.status(500).json({ success: false, error: 'Failed to fetch available tables' })
+  }
+})
+
 // Get available tables
 tablesRouter.get('/available', (req, res) => {
   try {

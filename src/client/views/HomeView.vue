@@ -3,22 +3,19 @@ import { ref, computed, onMounted, nextTick, defineAsyncComponent, type Componen
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { api } from '@/api'
 import { useCartStore } from '@/stores/cart'
-import { useTableStore } from '@/stores/table'
 import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
-import type { Category, Dish, Order } from '@/types'
+import type { Category, Dish } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import DishCard from '@/client/components/DishCard.vue'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
 import Skeleton from '@/shared/components/Skeleton.vue'
 
-const TableSelectModal = defineAsyncComponent(() => import('@/client/components/TableSelectModal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { Search, ShoppingCart, ChevronRight, Trash2, ChevronUp, ChevronDown } from 'lucide-vue-next'
+import { Search, ShoppingCart, Trash2, ChevronUp, ChevronDown, X } from 'lucide-vue-next'
 
 const router = useRouter()
 const cartStore = useCartStore()
-const tableStore = useTableStore()
 const appStore = useAppStore()
 
 const categories = ref<Category[]>([])
@@ -27,9 +24,9 @@ const selectedCategory = ref<string>('')
 const loading = ref(true)
 const initialized = ref(false)
 const showCart = ref(false)
-const showTableModal = ref(false)
-const isFromConfirmBtn = ref(false)
 const showClearConfirm = ref(false)
+const showTableFullModal = ref(false)
+const tableFullPeriod = ref<'中午' | '晚上'>('中午')
 const contentRef = ref<HTMLElement | null>(null)
 const sectionRefs = ref<Record<string, Element | null>>({})
 
@@ -93,7 +90,6 @@ async function fetchData() {
 
 const SCROLL_POS_KEY = 'home_scroll_top'
 const CATEGORY_KEY = 'home_selected_category'
-const ACTIVE_STATUSES = ['pending', 'confirmed']
 
 function handleDishClick(dish: Dish) {
   showCart.value = false
@@ -106,24 +102,11 @@ function handleDishClick(dish: Dish) {
 }
 
 function handleConfirmOrder() {
-  if (!tableStore.isTableSelected) {
-    isFromConfirmBtn.value = true
-    showTableModal.value = true
-    return
-  }
   router.push('/order/confirm')
 }
 
-function handleTableSelected() {
-  if (isFromConfirmBtn.value) {
-    router.push('/order/confirm')
-  }
-  isFromConfirmBtn.value = false
-}
-
-function openTableModal() {
-  showCart.value = false
-  showTableModal.value = true
+function dismissTableFullModal() {
+  showTableFullModal.value = false
 }
 
 function handleClearCart() {
@@ -211,18 +194,17 @@ onMounted(async () => {
     }
   }
   
-  // 登录完成后再检查桌位（仅首次进入页面时弹窗，从其他路由返回时不弹）
-  if (clientAuthStore.isAuthenticated && !tableStore.isTableSelected && !isReturningFromRoute) {
-    let hasActiveOrder = false
+  // 登录完成后再检查桌位（仅首次进入页面时检测，从其他路由返回时跳过）
+  if (clientAuthStore.isAuthenticated && !isReturningFromRoute) {
+    const period: '中午' | '晚上' = new Date().getHours() >= 13 ? '晚上' : '中午'
     try {
-      const phone = clientAuthStore.user?.phone || undefined
-      const res = await api.getOrders(phone)
-      hasActiveOrder = res.data.some((o: Order) => ACTIVE_STATUSES.includes(o.status))
+      const res = await api.getAvailableTablesFor(period)
+      if (res.data.length === 0) {
+        tableFullPeriod.value = period
+        showTableFullModal.value = true
+      }
     } catch {
       // 查询失败时不影响正常流程
-    }
-    if (!hasActiveOrder) {
-      showTableModal.value = true
     }
   }
 })
@@ -240,12 +222,6 @@ onMounted(async () => {
           </button>
         </div>
       </header>
-
-      <!-- Table Info -->
-      <div v-if="tableStore.selectedTable" class="table-info" @click="openTableModal">
-        <span>桌位：{{ tableStore.selectedTable.name }}</span>
-        <ChevronRight :size="16" />
-      </div>
 
       <!-- Main Content with Sidebar -->
       <div class="main-layout" @click="showCart = false">
@@ -363,8 +339,21 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Table Select Modal -->
-    <TableSelectModal v-model:show="showTableModal" :on-select="handleTableSelected" />
+    <!-- Table Full Modal -->
+    <Teleport to="body">
+      <Transition name="modal-fade">
+        <div v-if="showTableFullModal" class="table-full-backdrop" @click.self="dismissTableFullModal">
+          <div class="table-full-modal">
+            <button class="table-full-close" @click="dismissTableFullModal">
+              <X :size="18" />
+            </button>
+            <h3 class="table-full-title">非常抱歉</h3>
+            <p class="table-full-text">{{ tableFullPeriod }}的桌位已满</p>
+            <button class="btn btn-primary table-full-btn" @click="dismissTableFullModal">继续点菜</button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Remove Item Confirm Dialog -->
     <ConfirmDialog
@@ -420,18 +409,6 @@ onMounted(async () => {
 
 .icon-btn:hover {
   background-color: rgba(255, 255, 255, 0.2);
-}
-
-.table-info {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-lg);
-  background-color: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border-light);
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-  cursor: pointer;
 }
 
 .main-layout {
@@ -804,5 +781,81 @@ onMounted(async () => {
 .stagger-fade-up-move {
   -webkit-transition: transform var(--duration-normal) var(--ease-out);
   transition: transform var(--duration-normal) var(--ease-out);
+}
+
+/* Table Full Modal */
+.table-full-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+
+.table-full-modal {
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-2xl) var(--spacing-xl);
+  width: 300px;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.table-full-close {
+  position: absolute;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  transition: background-color var(--transition-fast);
+}
+
+.table-full-close:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+.table-full-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.table-full-text {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-xl);
+}
+
+.table-full-btn {
+  width: 100%;
+  padding: var(--spacing-md);
+}
+
+.modal-fade-enter-active {
+  animation: modalFadeIn 0.25s ease-out;
+}
+
+.modal-fade-leave-active {
+  animation: modalFadeOut 0.2s ease-in;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes modalFadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.95); }
 }
 </style>
