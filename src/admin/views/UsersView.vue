@@ -76,6 +76,18 @@ function openEditModal(user: AdminUser) {
 
 async function handleSave() {
   try {
+    // 前端校验：新建顾客时称呼和手机号必填
+    if (!editingUser.value && formData.value.role === 'customer') {
+      if (!formData.value.name.trim()) {
+        appStore.showToast('请填写称呼', 'error')
+        return
+      }
+      if (!formData.value.phone.trim()) {
+        appStore.showToast('请填写手机号', 'error')
+        return
+      }
+    }
+
     if (editingUser.value) {
       const updateData: {
         password?: string
@@ -158,6 +170,8 @@ onMounted(() => {
         <input
           v-model="searchQuery"
           type="text"
+          name="user-search"
+          autocomplete="off"
           placeholder="搜索用户..."
         />
       </div>
@@ -187,13 +201,13 @@ onMounted(() => {
       >
         <div class="user-info">
           <div class="user-name-row">
-            <h3 class="user-username">{{ user.username }}</h3>
+            <h3 class="user-username">{{ user.name || user.username }}</h3>
             <span class="role-badge" :class="user.role === 'admin' ? 'role-admin' : 'role-customer'">
               {{ user.role === 'admin' ? '管理员' : '顾客' }}
             </span>
           </div>
           <div class="user-meta">
-            <span v-if="user.name" class="meta-item">{{ user.name }}</span>
+            <span v-if="user.name" class="meta-item">{{ user.username }}</span>
             <span v-if="user.phone" class="meta-item">{{ user.phone }}</span>
             <span class="meta-item meta-date">{{ formatDate(user.created_at) }}</span>
           </div>
@@ -223,6 +237,7 @@ onMounted(() => {
           <input
             v-model="formData.username"
             type="text"
+            autocomplete="username"
             placeholder="请输入用户名"
             :disabled="!!editingUser"
           />
@@ -232,23 +247,32 @@ onMounted(() => {
           <input
             v-model="formData.password"
             type="password"
+            autocomplete="new-password"
             :placeholder="editingUser ? '留空则不修改密码' : '请输入密码（至少6位）'"
           />
         </div>
         <div class="form-group">
-          <label>姓名</label>
+          <label>
+            称呼
+            <span v-if="formData.role === 'customer' && !editingUser" class="required-mark">*</span>
+          </label>
           <input
             v-model="formData.name"
             type="text"
-            placeholder="请输入姓名（可选）"
+            autocomplete="name"
+            :placeholder="formData.role === 'customer' && !editingUser ? '请输入称呼' : '请输入称呼（可选）'"
           />
         </div>
         <div class="form-group">
-          <label>手机号</label>
+          <label>
+            手机号
+            <span v-if="formData.role === 'customer' && !editingUser" class="required-mark">*</span>
+          </label>
           <input
             v-model="formData.phone"
             type="text"
-            placeholder="请输入手机号（可选）"
+            autocomplete="tel"
+            :placeholder="formData.role === 'customer' && !editingUser ? '请输入手机号' : '请输入手机号（可选）'"
           />
         </div>
         <div class="form-group">
@@ -303,6 +327,7 @@ onMounted(() => {
   transform: translateY(-50%);
   color: var(--color-text-muted);
   pointer-events: none;
+  z-index: 1;
 }
 
 .search-input-wrapper input {
@@ -497,6 +522,11 @@ onMounted(() => {
 .form-group input:disabled {
   background-color: var(--color-bg-tertiary);
   color: var(--color-text-muted);
+}
+
+.required-mark {
+  color: var(--color-error);
+  margin-left: 2px;
 }
 
 @media (max-width: 640px) {
