@@ -13,6 +13,7 @@ import sharp from 'sharp'
 import AdmZip from 'adm-zip'
 import archiver from 'archiver'
 import { addSSEClient, removeSSEClient, broadcastSSE } from '../utils/sse.js'
+import { JWT_SECRET } from '../utils/jwt.js'
 
 function safeJsonParse<T>(jsonString: string | null | undefined, defaultValue: T): T {
   if (!jsonString) return defaultValue
@@ -34,10 +35,6 @@ interface JwtPayload {
   role: string
 }
 
-const SECRET_KEY = process.env.JWT_SECRET || randomBytes(48).toString('hex')
-if (!process.env.JWT_SECRET) {
-  console.warn('Warning: JWT_SECRET not set, using dynamic key. Tokens will not survive restarts.')
-}
 const COOKIE_NAME = 'admin_token'
 
 const sourcesDir = resolve(process.cwd(), 'public/sources')
@@ -122,7 +119,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
   
   try {
-    const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload
     if (decoded.role !== 'admin') {
       return res.status(403).json({ success: false, error: 'Admin access required' })
     }
@@ -1039,7 +1036,7 @@ adminRouter.delete('/users/:id', requireAuth, (req, res) => {
 
     // 获取当前操作者身份
     const token = req.cookies?.[COOKIE_NAME]
-    const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload
     if (decoded.userId === id) {
       return res.status(400).json({ success: false, error: '不能删除当前登录的用户' })
     }

@@ -1,9 +1,51 @@
-import { Router } from 'express'
+import { Router, type Request, type Response, type NextFunction } from 'express'
 import { all, get, run } from '../db/index.js'
 import { v4 as uuidv4 } from 'uuid'
 import { formatDateTime } from '../utils/format.js'
 import { createOrderSchema, cancelOrderSchema } from '../validators/index.js'
 import { broadcastSSE } from '../utils/sse.js'
+import jwt from 'jsonwebtoken'
+import { JWT_SECRET } from '../utils/jwt.js'
+
+const CLIENT_COOKIE_NAME = 'client_token'
+
+interface ClientJwtPayload {
+  userId: string
+  username: string
+  role: string
+  phone?: string
+}
+
+/**
+ * 客户端身份验证中间件
+ * 验证 client_token cookie，并确认用户仍存在于数据库
+ */
+function requireClientAuth(req: Request, res: Response, next: NextFunction) {
+  const token = req.cookies?.[CLIENT_COOKIE_NAME]
+  if (!token) {
+    return res.status(401).json({ success: false, error: '请先登录' })
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as ClientJwtPayload
+
+    // 校验用户是否仍存在于数据库中
+    const user = get<{ id: string }>(
+      'SELECT id FROM users WHERE id = ? AND role = ?',
+      [decoded.userId, 'customer']
+    )
+    if (!user) {
+      return res.status(401).json({ success: false, error: '用户不存在或已被删除' })
+    }
+
+    // 将用户信息注入请求上下文
+    ;(req as any).clientUserId = decoded.userId
+    ;(req as any).clientPhone = decoded.phone || decoded.username
+    next()
+  } catch {
+    return res.status(401).json({ success: false, error: '登录已过期，请重新登录' })
+  }
+}
 
 export const ordersRouter = Router()
 
@@ -15,8 +57,8 @@ function generateOrderNo(): string {
   return `RL${dateStr}${random}`
 }
 
-// Get all orders (for user - requires phone parameter)
-ordersRouter.get('/', (req, res) => {
+// Get all orders (for user - requires client auth)
+ordersRouter.get('/', requireClientAuth, (req, res) => {
   try {
     const { phone } = req.query
     
@@ -92,9 +134,9 @@ ordersRouter.get('/', (req, res) => {
 })
 
 // Get order by ID
-ordersRouter.get('/:id', (req, res) => {
+ordersRouter.get('/:id', requireClientAuth, (req, res) => {
   try {
-    const { id } = req.params
+    const id = req.params.id as string
     const order = get<{
       id: string
       order_no: string
@@ -129,7 +171,7 @@ ordersRouter.get('/:id', (req, res) => {
 })
 
 // Create new order
-ordersRouter.post('/', (req, res) => {
+ordersRouter.post('/', requireClientAuth, (req, res) => {
   try {
     // Validate input with zod schema
     const validation = createOrderSchema.safeParse(req.body)
@@ -271,10 +313,10 @@ ordersRouter.post('/', (req, res) => {
   }
 })
 
-// Cancel order (需要手机号验证身份)
-ordersRouter.post('/:id/cancel', (req, res) => {
+// Cancel order (需要客户端登录 + 手机号验证身份)
+ordersRouter.post('/:id/cancel', requireClientAuth, (req, res) => {
   try {
-    const { id } = req.params
+    const id = req.params.id as string
     
     // 验证请求体中的手机号
     const validation = cancelOrderSchema.safeParse(req.body)

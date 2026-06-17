@@ -3,6 +3,7 @@ import { get, run } from '../db/index.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { randomBytes } from 'crypto'
+import { JWT_SECRET } from '../utils/jwt.js'
 
 /**
  * JWT Payload 类型定义
@@ -50,11 +51,6 @@ function checkRateLimit(ip: string): boolean {
   attempts.count++
   attempts.lastAttempt = now
   return true
-}
-
-const SECRET_KEY = process.env.JWT_SECRET || randomBytes(48).toString('hex')
-if (!process.env.JWT_SECRET) {
-  console.warn('Warning: JWT_SECRET not set, using dynamic key. Tokens will not survive restarts.')
 }
 
 const isProduction = process.env.NODE_ENV === 'production'
@@ -116,7 +112,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, username: user.username, role: user.role },
-      SECRET_KEY,
+      JWT_SECRET,
       { expiresIn: '1d' }
     )
     
@@ -165,7 +161,7 @@ authRouter.get('/verify', (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: 'No token provided' })
     }
     
-    const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload
     
     res.json({
       success: true,
@@ -257,7 +253,7 @@ authRouter.post('/client/login', async (req: Request, res: Response) => {
     // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, username: user.username, role: 'customer', phone: user.phone },
-      SECRET_KEY,
+      JWT_SECRET,
       { expiresIn: '7d' }
     )
     
@@ -305,13 +301,28 @@ authRouter.get('/client/verify', (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: '未登录' })
     }
     
-    const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload & { phone?: string }
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload & { phone?: string }
+    
+    // 校验用户是否仍存在于数据库中（防止被删除的用户继续使用）
+    const user = get<{ id: string; phone: string | null }>(
+      'SELECT id, phone FROM users WHERE id = ? AND role = ?',
+      [decoded.userId, 'customer']
+    )
+    if (!user) {
+      res.clearCookie(CLIENT_COOKIE_NAME, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/',
+      })
+      return res.status(401).json({ success: false, error: '用户不存在或已被删除' })
+    }
     
     res.json({
       success: true,
       data: {
         userId: decoded.userId,
-        phone: decoded.phone || decoded.username,
+        phone: user.phone || decoded.phone || decoded.username,
         role: decoded.role
       }
     })
@@ -329,7 +340,7 @@ authRouter.put('/password', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: 'No token provided' })
     }
     
-    const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload
     
     const { oldPassword, newPassword } = req.body
     
