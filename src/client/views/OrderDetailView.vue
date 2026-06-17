@@ -157,7 +157,7 @@ function handleAddMore() {
     cartStore.setItemsFromOrder(order.value.items)
     cartStore.addDishOrderId = order.value.id
   }
-  router.push('/order/confirm')
+  router.push('/')
 }
 
 function handleBack() {

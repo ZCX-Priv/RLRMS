@@ -337,7 +337,9 @@ function connectSSE() {
   // 订单状态更新事件：增量更新
   es.addEventListener('order_updated', (e: MessageEvent) => {
     try {
-      const { id, status } = JSON.parse(e.data) as { id: string; status: Order['status'] }
+      const { id, status, type } = JSON.parse(e.data) as {
+        id: string; status: Order['status']; type?: string
+      }
       const idx = orders.value.findIndex(o => o.id === id)
       if (idx !== -1) {
         orders.value[idx] = { ...orders.value[idx]!, status }
@@ -346,7 +348,13 @@ function connectSSE() {
       if (selectedOrder.value?.id === id) {
         selectedOrder.value = { ...selectedOrder.value, status }
       }
-      fetchDashboard(false)
+      // 加菜事件：弹 toast 并刷新订单列表以获取新菜品
+      if (type === 'add_items') {
+        appStore.showToast('收到加菜请求，请确认', 'info')
+        fetchOrders(false)
+      } else {
+        fetchDashboard(false)
+      }
     } catch (err) {
       console.error('SSE order_updated parse error:', err)
     }
