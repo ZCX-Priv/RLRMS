@@ -38,7 +38,21 @@ export default defineConfig(({ mode }) => ({
   },
   server: {
     // 端口由 Express 统一控制（Vite 中间件模式）
-    // 此配置仅在独立运行 Vite 时生效
+    // 此配置仅在独立运行 Vite 时生效（如 Trae IDE 预览）
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/sources': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/health': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     // 代码分割策略

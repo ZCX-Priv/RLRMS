@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch server/src/dev.ts",
+    "dev:server": "tsx watch server/src/dev-server.ts",
     "build": "vue-tsc -b && vite build",
     "build:server": "tsc -p server/tsconfig.json",
     "build:production": "node scripts/build-production.mjs",
