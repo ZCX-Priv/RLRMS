@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, defineAsyncComponent, type ComponentPublicInstance } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, nextTick, defineAsyncComponent, type ComponentPublicInstance } from 'vue'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { api } from '@/api'
 import { useCartStore } from '@/stores/cart'
 import { useTableStore } from '@/stores/table'
 import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
-import type { Category, Dish } from '@/types'
+import type { Category, Dish, Order } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import DishCard from '@/client/components/DishCard.vue'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
@@ -91,8 +91,17 @@ async function fetchData() {
   }
 }
 
+const SCROLL_POS_KEY = 'home_scroll_top'
+const CATEGORY_KEY = 'home_selected_category'
+const ACTIVE_STATUSES = ['pending', 'confirmed', 'preparing', 'ready']
+
 function handleDishClick(dish: Dish) {
   showCart.value = false
+  // 保存当前滚动位置和选中分类
+  if (contentRef.value) {
+    sessionStorage.setItem(SCROLL_POS_KEY, String(contentRef.value.scrollTop))
+  }
+  sessionStorage.setItem(CATEGORY_KEY, selectedCategory.value)
   router.push(`/dish/${dish.id}`)
 }
 
@@ -147,8 +156,38 @@ function setSectionRef(el: Element | ComponentPublicInstance | null, categoryNam
   }
 }
 
+/** 尝试恢复滚动位置，返回是否是从其他页面返回 */
+async function restoreScrollPosition(): Promise<boolean> {
+  const savedPos = sessionStorage.getItem(SCROLL_POS_KEY)
+  const savedCat = sessionStorage.getItem(CATEGORY_KEY)
+  const isReturning = savedPos !== null || savedCat !== null
+  // 清除已消费的保存数据
+  sessionStorage.removeItem(SCROLL_POS_KEY)
+  sessionStorage.removeItem(CATEGORY_KEY)
+
+  if (savedCat) {
+    selectedCategory.value = savedCat
+  }
+  if (savedPos && contentRef.value) {
+    await nextTick()
+    contentRef.value.scrollTop = Number(savedPos)
+  }
+  return isReturning
+}
+
+/** 离开首页时保存标记，用于返回时跳过桌位弹窗 */
+onBeforeRouteLeave(() => {
+  sessionStorage.setItem(CATEGORY_KEY, selectedCategory.value)
+  if (contentRef.value) {
+    sessionStorage.setItem(SCROLL_POS_KEY, String(contentRef.value.scrollTop))
+  }
+})
+
 onMounted(async () => {
-  fetchData()
+  await fetchData()
+  
+  // 恢复滚动位置（如果从详情页返回），并记录是否是返回访问
+  const isReturningFromRoute = await restoreScrollPosition()
   
   // 先确保已登录
   const clientAuthStore = useClientAuthStore()
@@ -172,9 +211,19 @@ onMounted(async () => {
     }
   }
   
-  // 登录完成后再检查桌位
-  if (clientAuthStore.isAuthenticated && !tableStore.isTableSelected) {
-    showTableModal.value = true
+  // 登录完成后再检查桌位（仅首次进入页面时弹窗，从其他路由返回时不弹）
+  if (clientAuthStore.isAuthenticated && !tableStore.isTableSelected && !isReturningFromRoute) {
+    let hasActiveOrder = false
+    try {
+      const phone = clientAuthStore.user?.phone || undefined
+      const res = await api.getOrders(phone)
+      hasActiveOrder = res.data.some((o: Order) => ACTIVE_STATUSES.includes(o.status))
+    } catch {
+      // 查询失败时不影响正常流程
+    }
+    if (!hasActiveOrder) {
+      showTableModal.value = true
+    }
   }
 })
 </script>
@@ -494,8 +543,11 @@ onMounted(async () => {
   max-height: 40vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  outline: 1px solid var(--color-border-light);
   overflow: hidden;
+  margin-bottom: -1px;
+  position: relative;
+  z-index: 1;
 }
 
 .cart-expanded-header {
@@ -609,6 +661,8 @@ onMounted(async () => {
 .cart-expanded + .cart-bar {
   border-radius: 0 0 var(--radius-xl) var(--radius-xl);
   box-shadow: none;
+  outline: 1px solid var(--color-border-light);
+  outline-offset: -1px;
 }
 
 .cart-info {

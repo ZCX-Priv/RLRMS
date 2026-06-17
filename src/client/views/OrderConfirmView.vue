@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, defineAsyncComponent, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api'
+import { getItem, setItem } from '@/utils/storage'
 import { useCartStore } from '@/stores/cart'
 import { useTableStore } from '@/stores/table'
 import { useAppStore } from '@/stores/app'
@@ -44,7 +45,7 @@ const progressIcons: Record<string, Component> = {
   CheckCircle,
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (isAfterNoon.value) {
     diningTime.value = '晚上'
   }
@@ -52,8 +53,8 @@ onMounted(() => {
   if (clientAuthStore.user?.phone) {
     contactPhone.value = clientAuthStore.user.phone
   }
-  // Auto-fill contact name from localStorage
-  const savedName = localStorage.getItem('contact_name')
+  // Auto-fill contact name from IndexedDB
+  const savedName = await getItem<string>('contact_name')
   if (savedName) {
     contactName.value = savedName
     validateName(savedName)
@@ -77,8 +78,8 @@ function handleNameInput(event: Event) {
   const value = (event.target as HTMLInputElement).value
   contactName.value = value
   validateName(value)
-  // Persist to localStorage for auto-fill next time
-  localStorage.setItem('contact_name', value)
+  // Persist to IndexedDB for auto-fill next time
+  setItem('contact_name', value)
 }
 
 function handlePhoneInput(event: Event) {
