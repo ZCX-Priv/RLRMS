@@ -90,7 +90,7 @@ export interface Order {
   contact_name: string | null
   contact_phone: string | null
   total_amount: number
-  status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'completed' | 'cancelled'
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
   created_at: string
   updated_at: string
   items: OrderItem[]

@@ -65,7 +65,7 @@ export const updateInventorySchema = z.object({
 
 // 订单状态白名单验证
 export const updateOrderStatusSchema = z.object({
-  status: z.enum(['pending', 'confirmed', 'preparing', 'completed', 'cancelled'], {
+  status: z.enum(['pending', 'confirmed', 'completed', 'cancelled'], {
     errorMap: () => ({ message: '无效的订单状态' })
   })
 })

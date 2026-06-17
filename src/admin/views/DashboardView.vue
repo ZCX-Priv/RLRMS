@@ -78,8 +78,6 @@ const statusOptions: { value: Order['status'] | ''; label: string }[] = [
   { value: '', label: '全部' },
   { value: 'pending', label: '待处理' },
   { value: 'confirmed', label: '已确认' },
-  { value: 'preparing', label: '制作中' },
-  { value: 'ready', label: '已就绪' },
   { value: 'completed', label: '已完成' },
   { value: 'cancelled', label: '已取消' },
 ]
@@ -87,8 +85,6 @@ const statusOptions: { value: Order['status'] | ''; label: string }[] = [
 const statusText: Record<string, string> = {
   pending: '待处理',
   confirmed: '已确认',
-  preparing: '制作中',
-  ready: '已就绪',
   completed: '已完成',
   cancelled: '已取消',
 }
@@ -96,8 +92,6 @@ const statusText: Record<string, string> = {
 const statusColor: Record<string, string> = {
   pending: 'var(--color-warning)',
   confirmed: 'var(--color-info)',
-  preparing: 'var(--color-info)',
-  ready: 'var(--color-success)',
   completed: 'var(--color-success)',
   cancelled: 'var(--color-error)',
 }
@@ -179,19 +173,13 @@ async function confirmClearAllOrders() {
   const previousOrders = [...orders.value]
   const previousStats = stats.value ? { ...stats.value } : null
   
-  orders.value = []
-  if (stats.value) {
-    stats.value = {
-      ...stats.value,
-      todayOrders: 0,
-      todayRevenue: 0,
-      pendingOrders: 0,
-    }
-  }
+  // 仅移除已完成和已取消的订单，保留其他状态订单
+  orders.value = orders.value.filter(o => o.status !== 'completed' && o.status !== 'cancelled')
   
   try {
     await api.clearAllOrders()
-    appStore.showToast('订单已清空', 'success')
+    appStore.showToast('已完成和已取消的订单已清空', 'success')
+    fetchDashboard(false)
   } catch (error) {
     console.error('Failed to clear orders:', error)
     orders.value = previousOrders
@@ -640,6 +628,14 @@ onUnmounted(() => {
                   确认
                 </button>
                 <button
+                  v-if="order.status === 'confirmed'"
+                  class="btn btn-sm btn-success"
+                  @click="updateOrderStatus(order, 'completed')"
+                >
+                  <CheckCircle :size="14" />
+                  完成
+                </button>
+                <button
                   v-if="order.status === 'pending'"
                   class="btn btn-sm btn-ghost"
                   @click="updateOrderStatus(order, 'cancelled')"
@@ -726,7 +722,7 @@ onUnmounted(() => {
     <ConfirmDialog
       :show="showClearConfirm"
       title="清空订单"
-      message="确定要清空所有订单吗？此操作不可恢复！"
+      message="确定要清空所有已完成和已取消的订单吗？此操作不可恢复！"
       confirm-text="确定"
       cancel-text="取消"
       @confirm="confirmClearAllOrders"

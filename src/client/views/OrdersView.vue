@@ -19,8 +19,6 @@ const initialized = ref(false)
 const statusText: Record<string, string> = {
   pending: '等待商家确认',
   confirmed: '已确认',
-  preparing: '制作中',
-  ready: '已就绪',
   completed: '已完成',
   cancelled: '已取消',
 }
@@ -28,8 +26,6 @@ const statusText: Record<string, string> = {
 const statusColor: Record<string, string> = {
   pending: 'var(--color-warning)',
   confirmed: 'var(--color-info)',
-  preparing: 'var(--color-info)',
-  ready: 'var(--color-success)',
   completed: 'var(--color-success)',
   cancelled: 'var(--color-error)',
 }

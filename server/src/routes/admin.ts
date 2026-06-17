@@ -1156,12 +1156,11 @@ adminRouter.post('/reset-database', requireAuth, (req, res) => {
 adminRouter.post('/clear-orders', requireAuth, (req, res) => {
   try {
     beginBatch()
-    run('DELETE FROM order_items')
-    run('DELETE FROM orders')
-    run('UPDATE tables SET status = \'available\' WHERE status = \'occupied\'')
+    run("DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('completed', 'cancelled'))")
+    run("DELETE FROM orders WHERE status IN ('completed', 'cancelled')")
     endBatch()
     
-    res.json({ success: true, message: 'All orders cleared successfully' })
+    res.json({ success: true, message: '已完成和已取消的订单已清空' })
   } catch (error) {
     console.error('Error clearing orders:', error)
     res.status(500).json({ success: false, error: 'Failed to clear orders' })

@@ -93,7 +93,7 @@ async function fetchData() {
 
 const SCROLL_POS_KEY = 'home_scroll_top'
 const CATEGORY_KEY = 'home_selected_category'
-const ACTIVE_STATUSES = ['pending', 'confirmed', 'preparing', 'ready']
+const ACTIVE_STATUSES = ['pending', 'confirmed']
 
 function handleDishClick(dish: Dish) {
   showCart.value = false
