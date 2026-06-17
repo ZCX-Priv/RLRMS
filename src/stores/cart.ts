@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, toRaw } from 'vue'
 import type { CartItem, Dish, OrderItem } from '@/types'
 import { getItem as dbGet, setItem as dbSet, removeItem as dbRemove } from '@/utils/storage'
 
@@ -37,6 +37,7 @@ export const useCartStore = defineStore('cart', () => {
     } else {
       items.value.push({ dish, quantity, spec })
     }
+    saveItems()
   }
 
   // Remove item from cart
@@ -46,6 +47,7 @@ export const useCartStore = defineStore('cart', () => {
     )
     if (index >= 0) {
       items.value.splice(index, 1)
+      saveItems()
     }
   }
 
@@ -59,6 +61,7 @@ export const useCartStore = defineStore('cart', () => {
         removeItem(dishId, spec)
       } else {
         item.quantity = quantity
+        saveItems()
       }
     }
   }
@@ -67,8 +70,8 @@ export const useCartStore = defineStore('cart', () => {
   function clearCart() {
     items.value = []
     addDishOrderId.value = null
-    dbRemove(CART_ITEMS_KEY).catch(() => {})
-    dbRemove(CART_ORDER_ID_KEY).catch(() => {})
+    saveItems()
+    saveOrderId()
   }
 
   // Get items for order submission
@@ -103,6 +106,28 @@ export const useCartStore = defineStore('cart', () => {
       quantity: item.quantity,
       spec: item.spec,
     }))
+    saveItems()
+  }
+
+  // 显式保存：使用 JSON 序列化/反序列化彻底剥离所有层级的 Vue reactive Proxy，
+  // 确保传入 IndexedDB 的是纯对象，避免结构化克隆失败
+  function saveItems() {
+    if (!restored.value) return
+    const raw = JSON.parse(JSON.stringify(toRaw(items.value)))
+    if (raw.length === 0) {
+      dbRemove(CART_ITEMS_KEY).catch(console.error)
+    } else {
+      dbSet(CART_ITEMS_KEY, raw).catch(console.error)
+    }
+  }
+
+  function saveOrderId() {
+    if (!restored.value) return
+    if (addDishOrderId.value === null) {
+      dbRemove(CART_ORDER_ID_KEY).catch(console.error)
+    } else {
+      dbSet(CART_ORDER_ID_KEY, addDishOrderId.value).catch(console.error)
+    }
   }
 
   // Restore cart from IndexedDB on store init
@@ -125,23 +150,15 @@ export const useCartStore = defineStore('cart', () => {
     }
   }
 
-  // Persist items to IndexedDB whenever they change (after restore)
-  watch(items, (val) => {
+  // watch 作为兜底（主要保存已在各操作函数中显式调用）
+  watch(items, () => {
     if (!restored.value) return
-    if (val.length === 0) {
-      dbRemove(CART_ITEMS_KEY).catch(() => {})
-    } else {
-      dbSet(CART_ITEMS_KEY, val).catch(() => {})
-    }
+    saveItems()
   }, { deep: true })
 
-  watch(addDishOrderId, (val) => {
+  watch(addDishOrderId, () => {
     if (!restored.value) return
-    if (val === null) {
-      dbRemove(CART_ORDER_ID_KEY).catch(() => {})
-    } else {
-      dbSet(CART_ORDER_ID_KEY, val).catch(() => {})
-    }
+    saveOrderId()
   })
 
   // Trigger restore immediately
