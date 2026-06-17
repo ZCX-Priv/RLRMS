@@ -15,6 +15,17 @@ export interface User {
   phone: string | null
 }
 
+// Admin User (for user management page)
+export interface AdminUser {
+  id: string
+  username: string
+  role: 'customer' | 'admin'
+  name: string | null
+  phone: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface AuthResponse {
   token: string
   user: User

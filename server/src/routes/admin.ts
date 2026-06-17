@@ -8,7 +8,7 @@ import { resolve, extname, normalize } from 'path'
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync, createReadStream } from 'fs'
 import bcrypt from 'bcryptjs'
 import { formatDateTime } from '../utils/format.js'
-import { createDishSchema, updateDishSchema, createTableSchema, createCategorySchema, createInventorySchema, updateInventorySchema, updateOrderStatusSchema, confirmResetSchema } from '../validators/index.js'
+import { createDishSchema, updateDishSchema, createTableSchema, createCategorySchema, createInventorySchema, updateInventorySchema, updateOrderStatusSchema, confirmResetSchema, createUserSchema, updateUserSchema } from '../validators/index.js'
 import sharp from 'sharp'
 import AdmZip from 'adm-zip'
 import archiver from 'archiver'
@@ -917,6 +917,146 @@ adminRouter.delete('/inventory/:id', requireAuth, (req, res) => {
   } catch (error) {
     console.error('Error deleting inventory:', error)
     res.status(500).json({ success: false, error: 'Failed to delete inventory item' })
+  }
+})
+
+// ===== User Management =====
+
+adminRouter.get('/users', requireAuth, (req, res) => {
+  try {
+    const users = all<{
+      id: string
+      username: string
+      role: string
+      name: string | null
+      phone: string | null
+      created_at: string
+      updated_at: string
+    }>('SELECT id, username, role, name, phone, created_at, updated_at FROM users ORDER BY created_at ASC')
+    res.json({ success: true, data: users })
+  } catch (error) {
+    console.error('Error fetching users:', error)
+    res.status(500).json({ success: false, error: '获取用户列表失败' })
+  }
+})
+
+adminRouter.post('/users', requireAuth, async (req, res) => {
+  try {
+    const validation = createUserSchema.safeParse(req.body)
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: validation.error.errors[0]?.message || '参数验证失败'
+      })
+    }
+
+    const { username, password, role, name, phone } = validation.data
+
+    const existingUser = get<{ id: string }>('SELECT id FROM users WHERE username = ?', [username])
+    if (existingUser) {
+      return res.status(400).json({ success: false, error: '用户名已存在' })
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10)
+    const id = randomBytes(16).toString('hex')
+    run(
+      'INSERT INTO users (id, username, password, role, name, phone) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, username, hashedPassword, role, name || null, phone || null]
+    )
+
+    const user = get<{
+      id: string
+      username: string
+      role: string
+      name: string | null
+      phone: string | null
+      created_at: string
+      updated_at: string
+    }>('SELECT id, username, role, name, phone, created_at, updated_at FROM users WHERE id = ?', [id])
+    res.status(201).json({ success: true, data: user })
+  } catch (error) {
+    console.error('Error creating user:', error)
+    res.status(500).json({ success: false, error: '创建用户失败' })
+  }
+})
+
+adminRouter.put('/users/:id', requireAuth, async (req, res) => {
+  try {
+    const id = req.params.id as string
+
+    const validation = updateUserSchema.safeParse(req.body)
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: validation.error.errors[0]?.message || '参数验证失败'
+      })
+    }
+
+    const { password, role, name, phone } = validation.data
+
+    const existing = get<{ id: string; username: string }>('SELECT id, username FROM users WHERE id = ?', [id])
+    if (!existing) {
+      return res.status(404).json({ success: false, error: '用户不存在' })
+    }
+
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10)
+      run(
+        'UPDATE users SET password = ?, role = COALESCE(?, role), name = COALESCE(?, name), phone = COALESCE(?, phone), updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [hashedPassword, role ?? null, name ?? null, phone ?? null, id]
+      )
+    } else {
+      run(
+        'UPDATE users SET role = COALESCE(?, role), name = COALESCE(?, name), phone = COALESCE(?, phone), updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [role ?? null, name ?? null, phone ?? null, id]
+      )
+    }
+
+    const user = get<{
+      id: string
+      username: string
+      role: string
+      name: string | null
+      phone: string | null
+      created_at: string
+      updated_at: string
+    }>('SELECT id, username, role, name, phone, created_at, updated_at FROM users WHERE id = ?', [id])
+    res.json({ success: true, data: user })
+  } catch (error) {
+    console.error('Error updating user:', error)
+    res.status(500).json({ success: false, error: '更新用户失败' })
+  }
+})
+
+adminRouter.delete('/users/:id', requireAuth, (req, res) => {
+  try {
+    const id = req.params.id as string
+
+    const existing = get<{ id: string; role: string }>('SELECT id, role FROM users WHERE id = ?', [id])
+    if (!existing) {
+      return res.status(404).json({ success: false, error: '用户不存在' })
+    }
+
+    // 获取当前操作者身份
+    const token = req.cookies?.[COOKIE_NAME]
+    const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload
+    if (decoded.userId === id) {
+      return res.status(400).json({ success: false, error: '不能删除当前登录的用户' })
+    }
+
+    // 禁止删除最后一个管理员
+    if (existing.role === 'admin') {
+      const adminCount = get<{ count: number }>('SELECT COUNT(*) as count FROM users WHERE role = ?', ['admin'])
+      if (adminCount && adminCount.count <= 1) {
+        return res.status(400).json({ success: false, error: '不能删除最后一个管理员账户' })
+      }
+    }
+
+    run('DELETE FROM users WHERE id = ?', [id])
+    res.json({ success: true, message: '用户已删除' })
+  } catch (error) {
+    console.error('Error deleting user:', error)
+    res.status(500).json({ success: false, error: '删除用户失败' })
   }
 })
 

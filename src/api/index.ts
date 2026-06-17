@@ -1,4 +1,4 @@
-import type { Dish, Category, Table, Order, AuthResponse, DashboardStats, InventoryItem } from '@/types'
+import type { Dish, Category, Table, Order, AuthResponse, DashboardStats, InventoryItem, AdminUser } from '@/types'
 
 const API_BASE = '/api'
 
@@ -341,6 +341,31 @@ export const api = {
   
   async getSettings() {
     return request<{ success: boolean; data: Record<string, string> }>('/admin/settings')
+  },
+  
+  // User Management
+  async getUsers() {
+    return request<{ success: boolean; data: AdminUser[] }>('/admin/users')
+  },
+  
+  async createUser(data: { username: string; password: string; role: 'admin' | 'customer'; name?: string; phone?: string }) {
+    return request<{ success: boolean; data: AdminUser }>('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  
+  async updateUser(id: string, data: { password?: string; role?: 'admin' | 'customer'; name?: string; phone?: string }) {
+    return request<{ success: boolean; data: AdminUser }>(`/admin/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+  
+  async deleteUser(id: string) {
+    return request<{ success: boolean; message: string }>(`/admin/users/${id}`, {
+      method: 'DELETE',
+    })
   },
   
   async updateSettings(settings: Record<string, string>) {

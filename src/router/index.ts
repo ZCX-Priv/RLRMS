@@ -136,6 +136,12 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { title: '库存管理' }
       },
       {
+        path: 'users',
+        name: 'AdminUsers',
+        component: () => import('@/admin/views/UsersView.vue'),
+        meta: { title: '用户管理' }
+      },
+      {
         path: 'settings',
         name: 'AdminSettings',
         component: () => import('@/admin/views/SettingsView.vue'),

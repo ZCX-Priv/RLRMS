@@ -80,6 +80,22 @@ export const cancelOrderSchema = z.object({
   phone: z.string().regex(phoneRegex, '请输入有效的手机号码以验证身份')
 })
 
+// 用户管理验证
+export const createUserSchema = z.object({
+  username: z.string().min(1, '用户名不能为空').max(50),
+  password: z.string().min(6, '密码长度不能少于6位').max(128),
+  role: z.enum(['admin', 'customer'], { errorMap: () => ({ message: '无效的角色类型' }) }),
+  name: z.string().max(50).optional().nullable(),
+  phone: z.string().max(20).optional().nullable()
+})
+
+export const updateUserSchema = z.object({
+  password: z.string().min(6, '密码长度不能少于6位').max(128).optional().nullable(),
+  role: z.enum(['admin', 'customer'], { errorMap: () => ({ message: '无效的角色类型' }) }).optional(),
+  name: z.string().max(50).optional().nullable(),
+  phone: z.string().max(20).optional().nullable()
+})
+
 export type CreateOrderInput = z.infer<typeof createOrderSchema>
 export type CreateDishInput = z.infer<typeof createDishSchema>
 export type UpdateDishInput = z.infer<typeof updateDishSchema>
@@ -89,3 +105,5 @@ export type CreateInventoryInput = z.infer<typeof createInventorySchema>
 export type UpdateInventoryInput = z.infer<typeof updateInventorySchema>
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>
+export type CreateUserInput = z.infer<typeof createUserSchema>
+export type UpdateUserInput = z.infer<typeof updateUserSchema>

@@ -12,7 +12,8 @@ import {
   LogOut,
   Menu,
   X,
-  Archive
+  Archive,
+  Users
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -35,6 +36,7 @@ const navItems = [
   { icon: ClipboardList, label: '桌位管理', path: '/admin/tables' },
   { icon: UtensilsCrossed, label: '菜单管理', path: '/admin/dishes' },
   { icon: Archive, label: '库存管理', path: '/admin/inventory' },
+  { icon: Users, label: '用户管理', path: '/admin/users' },
   { icon: Settings, label: '系统设置', path: '/admin/settings' },
 ]
 
