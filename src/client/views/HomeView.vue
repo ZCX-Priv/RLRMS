@@ -514,15 +514,19 @@ onMounted(async () => {
   z-index: var(--z-fixed);
 }
 
+.cart-container:has(.cart-expanded) {
+  filter: drop-shadow(0 4px 20px rgba(0, 0, 0, 0.15));
+}
+
 .cart-expanded {
   background-color: var(--color-bg-secondary);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  border: 1px solid var(--color-border-light);
+  border-bottom: none;
   max-height: 40vh;
   display: flex;
   flex-direction: column;
-  outline: 1px solid var(--color-border-light);
   overflow: hidden;
-  margin-bottom: -1px;
   position: relative;
   z-index: 1;
 }
@@ -631,6 +635,7 @@ onMounted(async () => {
   justify-content: space-between;
   padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-light);
   border-radius: var(--radius-xl);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
