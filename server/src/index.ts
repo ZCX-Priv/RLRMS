@@ -11,7 +11,7 @@ import { apiRouter } from './routes/index.js'
 
 if (process.platform === 'win32') {
   try {
-    execSync('chcp 65001', { stdio: 'inherit' })
+    execSync('chcp 65001', { stdio: 'ignore' })
   } catch {
     // Ignore if chcp fails
   }
