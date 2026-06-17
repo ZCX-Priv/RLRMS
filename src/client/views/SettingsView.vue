@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ref, defineAsyncComponent } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
 import { clear as clearIndexedDB } from '@/utils/storage'
 import ClientLayout from '@/client/components/ClientLayout.vue'
-// Modal 改为异步组件懒加载，减小首屏 bundle 体积
-const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
+import Modal from '@/shared/components/Modal.vue'
 import { Sun, Moon, Monitor, ChevronRight, Info, Trash2, CircleUser, LogOut } from 'lucide-vue-next'
 
 const router = useRouter()

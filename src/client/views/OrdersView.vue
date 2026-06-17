@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
-import { useOrderPolling } from '@/shared/composables/useOrderPolling'
 import type { Order } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import { ChevronRight } from 'lucide-vue-next'
@@ -60,7 +59,21 @@ function formatDate(dateStr: string) {
   return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
-/** 轮询拉取订单列表（静默刷新，不显示 loading） */
+onMounted(() => {
+  fetchOrders()
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onUnmounted(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
+
+// 订单列表轮询
+let pollingTimer: ReturnType<typeof setInterval> | null = null
+const POLLING_INTERVAL = 5000
+
 async function pollOrders() {
   try {
     const phone = clientAuthStore.user?.phone || undefined
@@ -71,12 +84,26 @@ async function pollOrders() {
   }
 }
 
-// 复用 useOrderPolling composable，自动处理 visibilitychange 与生命周期
-useOrderPolling(pollOrders, { interval: 5000 })
+function startPolling() {
+  if (pollingTimer) return
+  pollingTimer = setInterval(pollOrders, POLLING_INTERVAL)
+}
 
-onMounted(() => {
-  fetchOrders()
-})
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopPolling()
+  } else {
+    pollOrders() // 立刻拉一次
+    startPolling()
+  }
+}
 </script>
 
 <template>

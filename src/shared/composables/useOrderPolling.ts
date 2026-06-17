@@ -15,8 +15,6 @@ export function useOrderPolling(
   const isPolling = ref(false)
   const lastOrderCount = ref(0)
   let pollingTimer: ReturnType<typeof setInterval> | null = null
-  // 请求进行中标志：防止请求堆积，避免上一次请求未完成就发起下一次
-  let isFetching = false
 
   function startPolling() {
     if (pollingTimer) return
@@ -24,15 +22,10 @@ export function useOrderPolling(
     pollingTimer = setInterval(async () => {
       // 如果提供了 shouldPoll 且返回 false，则跳过本次轮询
       if (shouldPoll && !shouldPoll()) return
-      // 如果上一次请求仍在进行中，跳过本次轮询，防止请求堆积
-      if (isFetching) return
-      isFetching = true
       try {
         await fetchFunction()
       } catch (error) {
         console.error('Polling error:', error)
-      } finally {
-        isFetching = false
       }
     }, interval)
   }

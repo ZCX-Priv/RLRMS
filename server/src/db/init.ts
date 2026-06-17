@@ -150,31 +150,6 @@ export async function initializeDatabase() {
     console.log('Default settings created')
   }
 
-  // 创建数据库索引（提升查询性能，幂等操作）
-  // orders 表索引
-  run('CREATE INDEX IF NOT EXISTS idx_orders_contact_phone ON orders(contact_phone)')
-  run('CREATE INDEX IF NOT EXISTS idx_orders_table_id ON orders(table_id)')
-  run('CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)')
-  run('CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)')
-
-  // order_items 表索引
-  run('CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id)')
-  run('CREATE INDEX IF NOT EXISTS idx_order_items_dish_id ON order_items(dish_id)')
-
-  // dishes 表索引
-  run('CREATE INDEX IF NOT EXISTS idx_dishes_category_id ON dishes(category_id)')
-  run('CREATE INDEX IF NOT EXISTS idx_dishes_status ON dishes(status)')
-  run('CREATE INDEX IF NOT EXISTS idx_dishes_name ON dishes(name)')
-
-  // users 表索引
-  run('CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone)')
-  run('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)')
-
-  // tables 表索引
-  run('CREATE INDEX IF NOT EXISTS idx_tables_status ON tables(status)')
-
-  console.log('Database indexes ensured')
-
   // End batch operation and save database once
   endBatch()
 

@@ -103,22 +103,12 @@ function validateName(value: string) {
   }
 }
 
-// handleNameInput 的 debounce 定时器引用
-let nameInputTimer: ReturnType<typeof setTimeout> | null = null
-
 function handleNameInput(event: Event) {
   const value = (event.target as HTMLInputElement).value
-  // 立即更新 contactName，保证输入流畅
   contactName.value = value
-  // 对验证与持久化操作添加 300ms debounce，避免频繁触发
-  if (nameInputTimer) {
-    clearTimeout(nameInputTimer)
-  }
-  nameInputTimer = setTimeout(() => {
-    validateName(value)
-    // 持久化到 IndexedDB，下次自动填充
-    setItem('contact_name', value)
-  }, 300)
+  validateName(value)
+  // Persist to IndexedDB for auto-fill next time
+  setItem('contact_name', value)
 }
 
 function handlePhoneInput(event: Event) {

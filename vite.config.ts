@@ -1,21 +1,40 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+
+/**
+ * 移除 console.log 的插件
+ * 仅在生产环境生效
+ */
+function removeConsolePlugin(): Plugin {
+  return {
+    name: 'remove-console',
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      for (const fileName in bundle) {
+        const file = bundle[fileName]
+        if (file.type === 'chunk' && file.code) {
+          // 移除 console.log、console.info、console.debug（保留 console.warn 和 console.error）
+          file.code = file.code
+            .replace(/console\.(log|info|debug)\s*\([^)]*\)\s*;?/g, '')
+            .replace(/console\.(log|info|debug)\s*\([^)]*\);?/g, '')
+        }
+      }
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
+    // 仅在生产环境移除 console
+    ...(mode === 'production' ? [removeConsolePlugin()] : []),
   ],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
     },
-  },
-  // 使用 esbuild pure 选项移除 console.log/info/debug
-  // 注意：使用 pure 而非 drop，保留 console.warn 和 console.error
-  esbuild: {
-    pure: mode === 'production' ? ['console.log', 'console.info', 'console.debug'] : [],
   },
   server: {
     // 端口由 Express 统一控制（Vite 中间件模式）

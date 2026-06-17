@@ -17,44 +17,44 @@ export const useCartStore = defineStore('cart', () => {
     return items.value.reduce((sum, item) => sum + item.quantity, 0)
   })
 
-  // Add item to cart（不可变操作：始终创建新数组）
+  // Add item to cart
   function addItem(dish: Dish, quantity: number = 1, spec: string | null = null) {
     const existingIndex = items.value.findIndex(
       (item: CartItem) => item.dish.id === dish.id && item.spec === spec
     )
 
     if (existingIndex >= 0) {
-      // 不可变更新：仅替换匹配项，其余保持引用不变
-      items.value = items.value.map((item, index) =>
-        index === existingIndex
-          ? { ...item, quantity: item.quantity + quantity }
-          : item
-      )
+      const existingItem = items.value[existingIndex]
+      if (existingItem) {
+        existingItem.quantity += quantity
+      }
     } else {
-      // 不可变追加：使用 spread 创建新数组
-      items.value = [...items.value, { dish, quantity, spec }]
+      items.value.push({ dish, quantity, spec })
     }
   }
 
-  // Remove item from cart（不可变操作：使用 filter 创建新数组）
+  // Remove item from cart
   function removeItem(dishId: string, spec: string | null = null) {
-    items.value = items.value.filter(
-      (item: CartItem) => !(item.dish.id === dishId && item.spec === spec)
+    const index = items.value.findIndex(
+      (item: CartItem) => item.dish.id === dishId && item.spec === spec
     )
+    if (index >= 0) {
+      items.value.splice(index, 1)
+    }
   }
 
-  // Update item quantity（不可变操作：使用 map 创建新数组）
+  // Update item quantity
   function updateQuantity(dishId: string, quantity: number, spec: string | null = null) {
-    if (quantity <= 0) {
-      removeItem(dishId, spec)
-      return
-    }
-    // 不可变更新：仅替换匹配项，其余保持引用不变
-    items.value = items.value.map((item: CartItem) =>
-      item.dish.id === dishId && item.spec === spec
-        ? { ...item, quantity }
-        : item
+    const item = items.value.find(
+      (item: CartItem) => item.dish.id === dishId && item.spec === spec
     )
+    if (item) {
+      if (quantity <= 0) {
+        removeItem(dishId, spec)
+      } else {
+        item.quantity = quantity
+      }
+    }
   }
 
   // Clear cart

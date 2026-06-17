@@ -5,8 +5,6 @@ import { useAppStore } from '@/stores/app'
 import { useOrderPolling } from '@/shared/composables/useOrderPolling'
 import type { DashboardStats, Order } from '@/types'
 import Skeleton from '@/shared/components/Skeleton.vue'
-// 虚拟滚动组件，用于长订单列表性能优化
-import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
@@ -249,25 +247,9 @@ function formatDate(dateStr: string) {
   return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
-// AudioContext 单例：避免每次播放通知音都创建新实例，减少资源开销
-let audioContext: AudioContext | null = null
-
-/**
- * 获取 AudioContext 单例
- * 首次调用时创建，后续复用同一实例
- */
-function getAudioContext(): AudioContext {
-  if (!audioContext) {
-    const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-    audioContext = new AudioContextCtor()
-  }
-  return audioContext
-}
-
 function playNotificationSound() {
   try {
-    // 复用 AudioContext 单例，避免重复创建
-    const audioContext = getAudioContext()
+    const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
     const oscillator = audioContext.createOscillator()
     const gainNode = audioContext.createGain()
     
@@ -316,10 +298,7 @@ function dismissNotification() {
 let eventSource: EventSource | null = null
 let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null
 const sseConnected = ref(false)
-// SSE 重连指数退避相关常量
-const SSE_RECONNECT_BASE_DELAY = 3000  // 基础延迟 3 秒
-const SSE_RECONNECT_MAX_DELAY = 60000  // 最大延迟 60 秒
-let reconnectAttempts = 0  // 重连次数追踪
+const SSE_RECONNECT_DELAY = 3000
 
 function connectSSE() {
   // 清理旧的连接
@@ -330,8 +309,6 @@ function connectSSE() {
   
   es.addEventListener('connected', () => {
     sseConnected.value = true
-    // SSE 连接成功后重置重连次数
-    reconnectAttempts = 0
     // SSE 连接成功后停止轮询（如果正在轮询）
     if (isPolling.value) {
       stopPolling()
@@ -376,23 +353,19 @@ function connectSSE() {
   })
   
   es.onerror = () => {
-    // BUG 修复：SSE 断开时应标记为未连接
-    sseConnected.value = false
+    sseConnected.value = true
     es.close()
     eventSource = null
     // SSE 断开后启用轮询作为降级方案
     if (autoRefreshEnabled.value && !isPolling.value) {
       startPolling()
     }
-    // 定时重连 SSE（指数退避策略）
+    // 定时重连 SSE
     if (!sseReconnectTimer) {
-      // 计算本次重连延迟：3s → 6s → 12s → 24s，上限 60s
-      const delay = Math.min(SSE_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts), SSE_RECONNECT_MAX_DELAY)
-      reconnectAttempts++
       sseReconnectTimer = setTimeout(() => {
         sseReconnectTimer = null
         connectSSE()
-      }, delay)
+      }, SSE_RECONNECT_DELAY)
     }
   }
 }
@@ -414,8 +387,7 @@ async function fetchOrdersWithCheck() {
   await fetchOrders(true)
   if (autoRefreshEnabled.value && orders.value.length > previousCount) {
     handleNewOrder(orders.value.length - previousCount)
-    // 等待仪表盘数据刷新完成，避免与下一次轮询产生竞态
-    await fetchDashboard(false)
+    fetchDashboard()
   }
 }
 
@@ -613,98 +585,81 @@ onUnmounted(() => {
           <p class="empty-description">当前筛选条件下没有订单记录</p>
         </div>
 
-        <div v-else class="orders-list-virtual">
-          <!-- 使用 DynamicScroller 实现虚拟滚动，优化长订单列表性能 -->
-          <DynamicScroller
-            :items="orders"
-            :min-item-size="120"
-            key-field="id"
-            class="orders-scroller"
+        <div v-else class="orders-list">
+          <div
+            v-for="order in orders"
+            :key="order.id"
+            class="order-item"
           >
-            <template #default="{ item, active }">
-              <DynamicScrollerItem
-                :item="item"
-                :active="active"
-                :data-index="item.id"
-              >
-                <!-- v-memo 优化：仅当订单状态或 ID 变化时重新渲染 -->
-                <div
-                  :key="item.id"
-                  class="order-item"
-                  v-memo="[item.status, item.id]"
+            <div class="order-header">
+              <div class="order-info">
+                <span class="order-no">{{ order.order_no }}</span>
+                <span
+                  class="order-status"
+                  :style="{ backgroundColor: statusColor[order.status] }"
                 >
-                  <div class="order-header">
-                    <div class="order-info">
-                      <span class="order-no">{{ item.order_no }}</span>
-                      <span
-                        class="order-status"
-                        :style="{ backgroundColor: statusColor[item.status] }"
-                      >
-                        {{ statusText[item.status] }}
-                      </span>
-                    </div>
-                    <span class="order-time">{{ formatDate(item.created_at) }}</span>
-                  </div>
+                  {{ statusText[order.status] }}
+                </span>
+              </div>
+              <span class="order-time">{{ formatDate(order.created_at) }}</span>
+            </div>
 
-                  <div class="order-body">
-                    <div class="order-meta">
-                      <span class="meta-item">
-                        <strong>桌位：</strong>{{ item.table_name || '未指定' }}
-                      </span>
-                      <span class="meta-item">
-                        <strong>就餐时间：</strong>{{ item.dining_time }}
-                      </span>
-                    </div>
-                    <div class="order-contact">
-                      <span>{{ item.contact_name }} / {{ item.contact_phone }}</span>
-                    </div>
-                    <div class="order-items">
-                      <span v-for="orderItem in item.items.slice(0, 3)" :key="orderItem.id" class="item-tag">
-                        {{ orderItem.dish_name }} x{{ orderItem.quantity }}
-                      </span>
-                      <span v-if="item.items.length > 3" class="item-more">
-                        +{{ item.items.length - 3 }}项
-                      </span>
-                    </div>
-                  </div>
+            <div class="order-body">
+              <div class="order-meta">
+                <span class="meta-item">
+                  <strong>桌位：</strong>{{ order.table_name || '未指定' }}
+                </span>
+                <span class="meta-item">
+                  <strong>就餐时间：</strong>{{ order.dining_time }}
+                </span>
+              </div>
+              <div class="order-contact">
+                <span>{{ order.contact_name }} / {{ order.contact_phone }}</span>
+              </div>
+              <div class="order-items">
+                <span v-for="item in order.items.slice(0, 3)" :key="item.id" class="item-tag">
+                  {{ item.dish_name }} x{{ item.quantity }}
+                </span>
+                <span v-if="order.items.length > 3" class="item-more">
+                  +{{ order.items.length - 3 }}项
+                </span>
+              </div>
+            </div>
 
-                  <div class="order-footer">
-                    <span class="order-amount">{{ item.total_amount.toFixed(2) }}元</span>
-                    <div class="order-actions">
-                      <button class="btn btn-sm btn-secondary" @click="viewOrder(item)">
-                        <Eye :size="14" />
-                        详情
-                      </button>
-                      <button
-                        v-if="item.status === 'pending'"
-                        class="btn btn-sm btn-primary"
-                        @click="updateOrderStatus(item, 'confirmed')"
-                      >
-                        <CheckCircle :size="14" />
-                        确认
-                      </button>
-                      <button
-                        v-if="item.status === 'confirmed'"
-                        class="btn btn-sm btn-success"
-                        @click="updateOrderStatus(item, 'completed')"
-                      >
-                        <CheckCircle :size="14" />
-                        完成
-                      </button>
-                      <button
-                        v-if="item.status === 'pending'"
-                        class="btn btn-sm btn-ghost"
-                        @click="updateOrderStatus(item, 'cancelled')"
-                      >
-                        <XCircle :size="14" />
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </DynamicScrollerItem>
-            </template>
-          </DynamicScroller>
+            <div class="order-footer">
+              <span class="order-amount">{{ order.total_amount.toFixed(2) }}元</span>
+              <div class="order-actions">
+                <button class="btn btn-sm btn-secondary" @click="viewOrder(order)">
+                  <Eye :size="14" />
+                  详情
+                </button>
+                <button
+                  v-if="order.status === 'pending'"
+                  class="btn btn-sm btn-primary"
+                  @click="updateOrderStatus(order, 'confirmed')"
+                >
+                  <CheckCircle :size="14" />
+                  确认
+                </button>
+                <button
+                  v-if="order.status === 'confirmed'"
+                  class="btn btn-sm btn-success"
+                  @click="updateOrderStatus(order, 'completed')"
+                >
+                  <CheckCircle :size="14" />
+                  完成
+                </button>
+                <button
+                  v-if="order.status === 'pending'"
+                  class="btn btn-sm btn-ghost"
+                  @click="updateOrderStatus(order, 'cancelled')"
+                >
+                  <XCircle :size="14" />
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </template>
@@ -1018,22 +973,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-}
-
-/* 虚拟滚动容器：需明确高度才能触发滚动 */
-.orders-list-virtual {
-  height: 70vh;
-  max-height: 800px;
-}
-
-/* DynamicScroller 滚动区域 */
-.orders-scroller {
-  height: 100%;
-}
-
-/* 虚拟滚动下的订单项需要保留间距 */
-.orders-scroller .order-item {
-  margin-bottom: var(--spacing-md);
 }
 
 .order-item {

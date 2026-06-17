@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, defineAsyncComponent } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
 import { useCartStore } from '@/stores/cart'
 import { useTableStore } from '@/stores/table'
-import { useOrderPolling } from '@/shared/composables/useOrderPolling'
 import type { Order } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 import { ArrowLeft, Store, Clock, Phone, User, QrCode } from 'lucide-vue-next'
-// QRCode 与 JsBarcode 改为按需动态导入，减小首屏 bundle 体积
+import QRCode from 'qrcode'
+import JsBarcode from 'jsbarcode'
 
 const router = useRouter()
 const route = useRoute()
@@ -70,7 +70,8 @@ async function fetchOrder() {
   }
 }
 
-// 订单状态轮询：复用 useOrderPolling composable，避免重复实现
+// 订单状态轮询
+let pollingTimer: ReturnType<typeof setInterval> | null = null
 const POLLING_INTERVAL = 3000
 const ACTIVE_STATUSES = ['pending', 'confirmed']
 
@@ -78,8 +79,11 @@ function isOrderActive(): boolean {
   return !!order.value && ACTIVE_STATUSES.includes(order.value.status)
 }
 
-/** 轮询拉取订单最新状态 */
 async function pollOrder() {
+  if (!isOrderActive()) {
+    stopPolling()
+    return
+  }
   try {
     const id = route.params.id as string
     const res = await api.getOrder(id)
@@ -93,14 +97,26 @@ async function pollOrder() {
   }
 }
 
-const { stopPolling } = useOrderPolling(
-  pollOrder,
-  {
-    interval: POLLING_INTERVAL,
-    // 仅在订单处于活跃状态时才执行轮询
-    shouldPoll: () => isOrderActive(),
+function startPolling() {
+  if (pollingTimer) return
+  pollingTimer = setInterval(pollOrder, POLLING_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
   }
-)
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopPolling()
+  } else if (isOrderActive()) {
+    pollOrder() // 先立刻拉一次
+    startPolling()
+  }
+}
 
 async function handleCancel() {
   if (!order.value || cancelling.value) return
@@ -146,9 +162,6 @@ function copyOrderNo() {
 async function generateQRCode() {
   if (order.value) {
     try {
-      // 动态导入 QRCode 与 JsBarcode，仅在用户查看订单码时加载
-      const QRCode = (await import('qrcode')).default
-      const JsBarcode = (await import('jsbarcode')).default
       qrCodeDataUrl.value = await QRCode.toDataURL(order.value.order_no, {
         width: 150,
         margin: 2,
@@ -178,10 +191,18 @@ watch(showQRModal, (newVal) => {
   }
 })
 
-// useOrderPolling 会在 onMounted 时自动 startPolling，并在 onUnmounted 时自动 stopPolling
-// shouldPoll 选项确保仅在订单活跃时才执行轮询，因此无需手动控制
 onMounted(() => {
-  fetchOrder()
+  fetchOrder().then(() => {
+    if (isOrderActive()) {
+      startPolling()
+    }
+  })
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onUnmounted(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 

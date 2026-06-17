@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, defineAsyncComponent } from 'vue'
+import { ref, onMounted } from 'vue'
 import { api } from '@/api'
 import { useTableStore } from '@/stores/table'
 import { useAppStore } from '@/stores/app'
 import type { Table } from '@/types'
-// Modal 改为异步组件懒加载，减小首屏 bundle 体积
-const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
+import Modal from '@/shared/components/Modal.vue'
 import { Check, Ban } from 'lucide-vue-next'
 
 const props = defineProps<{

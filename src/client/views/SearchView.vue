@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, toRaw, defineAsyncComponent } from 'vue'
+import { ref, onMounted, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
@@ -7,8 +7,7 @@ import { getItem, setItem, removeItem } from '@/utils/storage'
 import type { Dish } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import DishCard from '@/client/components/DishCard.vue'
-// ConfirmDialog 改为异步组件懒加载，减小首屏 bundle 体积
-const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
+import ConfirmDialog from '@/shared/components/ConfirmDialog.vue'
 import { ArrowLeft, Search, X, Trash2 } from 'lucide-vue-next'
 
 const router = useRouter()

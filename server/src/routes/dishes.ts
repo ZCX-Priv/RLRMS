@@ -1,7 +1,6 @@
 import { Router } from 'express'
 import { all, get, run } from '../db/index.js'
 import { v4 as uuidv4 } from 'uuid'
-import { getCached, setCached } from '../utils/cache.js'
 
 export const dishesRouter = Router()
 
@@ -32,7 +31,7 @@ dishesRouter.get('/', (req, res) => {
       params.push(category as string)
     }
     
-    query += ' ORDER BY c.sort_order, d.sort_order, d.created_at LIMIT 500'
+    query += ' ORDER BY c.sort_order, d.sort_order, d.created_at'
     
     const dishes = all<{
       id: string
@@ -55,13 +54,6 @@ dishesRouter.get('/', (req, res) => {
 // IMPORTANT: This must be defined BEFORE /:id to avoid route conflicts
 dishesRouter.get('/home-data', (req, res) => {
   try {
-    // 尝试命中缓存
-    const cacheKey = 'home_data'
-    const cached = getCached<{ categories: unknown[]; dishes: unknown[] }>(cacheKey)
-    if (cached) {
-      return res.json({ success: true, data: cached })
-    }
-
     const categories = all<{
       id: string
       name: string
@@ -88,17 +80,16 @@ dishesRouter.get('/home-data', (req, res) => {
 
     const dishes = rawDishes.map(dish => ({
       ...dish,
-      tags: safeJsonParse(dish.tags, []),
-      specs: safeJsonParse(dish.specs, []),
+      tags: JSON.parse(dish.tags || '[]'),
+      specs: JSON.parse(dish.specs || '[]'),
     }))
-
-    const data = { categories, dishes }
-    // 写入缓存，TTL 60 秒
-    setCached(cacheKey, data, 60000)
 
     res.json({
       success: true,
-      data
+      data: {
+        categories,
+        dishes
+      }
     })
   } catch (error) {
     console.error('Error fetching home data:', error)
@@ -135,8 +126,8 @@ dishesRouter.get('/search/query', (req, res) => {
     
     const dishes = rawDishes.map(dish => ({
       ...dish,
-      tags: safeJsonParse(dish.tags, []),
-      specs: safeJsonParse(dish.specs, []),
+      tags: JSON.parse(dish.tags || '[]'),
+      specs: JSON.parse(dish.specs || '[]'),
     }))
     
     res.json({ success: true, data: dishes })
@@ -150,16 +141,7 @@ dishesRouter.get('/search/query', (req, res) => {
 // IMPORTANT: This must be defined BEFORE /:id to avoid route conflicts
 dishesRouter.get('/categories/all', (req, res) => {
   try {
-    // 尝试命中缓存
-    const cacheKey = 'categories'
-    const cached = getCached<unknown[]>(cacheKey)
-    if (cached) {
-      return res.json({ success: true, data: cached })
-    }
-
     const categories = all('SELECT * FROM categories ORDER BY sort_order')
-    // 写入缓存，TTL 60 秒
-    setCached(cacheKey, categories, 60000)
     res.json({ success: true, data: categories })
   } catch (error) {
     console.error('Error fetching categories:', error)
