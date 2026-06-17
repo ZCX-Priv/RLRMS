@@ -17,44 +17,44 @@ export const useCartStore = defineStore('cart', () => {
     return items.value.reduce((sum, item) => sum + item.quantity, 0)
   })
 
-  // Add item to cart
+  // Add item to cart（不可变操作：始终创建新数组）
   function addItem(dish: Dish, quantity: number = 1, spec: string | null = null) {
     const existingIndex = items.value.findIndex(
       (item: CartItem) => item.dish.id === dish.id && item.spec === spec
     )
 
     if (existingIndex >= 0) {
-      const existingItem = items.value[existingIndex]
-      if (existingItem) {
-        existingItem.quantity += quantity
-      }
+      // 不可变更新：仅替换匹配项，其余保持引用不变
+      items.value = items.value.map((item, index) =>
+        index === existingIndex
+          ? { ...item, quantity: item.quantity + quantity }
+          : item
+      )
     } else {
-      items.value.push({ dish, quantity, spec })
+      // 不可变追加：使用 spread 创建新数组
+      items.value = [...items.value, { dish, quantity, spec }]
     }
   }
 
-  // Remove item from cart
+  // Remove item from cart（不可变操作：使用 filter 创建新数组）
   function removeItem(dishId: string, spec: string | null = null) {
-    const index = items.value.findIndex(
-      (item: CartItem) => item.dish.id === dishId && item.spec === spec
+    items.value = items.value.filter(
+      (item: CartItem) => !(item.dish.id === dishId && item.spec === spec)
     )
-    if (index >= 0) {
-      items.value.splice(index, 1)
-    }
   }
 
-  // Update item quantity
+  // Update item quantity（不可变操作：使用 map 创建新数组）
   function updateQuantity(dishId: string, quantity: number, spec: string | null = null) {
-    const item = items.value.find(
-      (item: CartItem) => item.dish.id === dishId && item.spec === spec
-    )
-    if (item) {
-      if (quantity <= 0) {
-        removeItem(dishId, spec)
-      } else {
-        item.quantity = quantity
-      }
+    if (quantity <= 0) {
+      removeItem(dishId, spec)
+      return
     }
+    // 不可变更新：仅替换匹配项，其余保持引用不变
+    items.value = items.value.map((item: CartItem) =>
+      item.dish.id === dishId && item.spec === spec
+        ? { ...item, quantity }
+        : item
+    )
   }
 
   // Clear cart

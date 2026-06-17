@@ -1,12 +1,22 @@
 import { Router } from 'express'
 import { all, get } from '../db/index.js'
+import { getCached, setCached } from '../utils/cache.js'
 
 export const tablesRouter = Router()
 
 // Get all tables
 tablesRouter.get('/', (req, res) => {
   try {
+    // 尝试命中缓存
+    const cacheKey = 'tables'
+    const cached = getCached<unknown[]>(cacheKey)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
+
     const tables = all('SELECT * FROM tables ORDER BY table_no')
+    // 写入缓存，TTL 60 秒
+    setCached(cacheKey, tables, 60000)
     res.json({ success: true, data: tables })
   } catch (error) {
     console.error('Error fetching tables:', error)
@@ -43,11 +53,20 @@ tablesRouter.get('/available-for', (req, res) => {
 // Get available tables
 tablesRouter.get('/available', (req, res) => {
   try {
+    // 尝试命中缓存
+    const cacheKey = 'tables_available'
+    const cached = getCached<unknown[]>(cacheKey)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
+
     const tables = all(`
       SELECT * FROM tables 
       WHERE status = 'available' 
       ORDER BY table_no
     `)
+    // 写入缓存，TTL 60 秒
+    setCached(cacheKey, tables, 60000)
     res.json({ success: true, data: tables })
   } catch (error) {
     console.error('Error fetching available tables:', error)

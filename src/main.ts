@@ -3,6 +3,8 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router, { preloadCriticalRoutes } from './router'
 import './style.css'
+// 引入 vue-virtual-scroller 样式，用于长列表虚拟滚动
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 
 const app = createApp(App)
 

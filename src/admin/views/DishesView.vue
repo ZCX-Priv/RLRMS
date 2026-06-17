@@ -43,6 +43,42 @@ const categoryToDelete = ref<string>('')
 
 const allTags = computed(() => [...defaultTags, ...customTags.value])
 
+// 菜品图片加载状态映射：dishId -> { loaded, error }
+const dishImageStatus = ref<Map<string, { loaded: boolean; error: boolean }>>(new Map())
+
+/**
+ * 获取菜品图片加载状态
+ * @param dishId 菜品 ID
+ */
+function getDishImageStatus(dishId: string): { loaded: boolean; error: boolean } {
+  return dishImageStatus.value.get(dishId) ?? { loaded: false, error: false }
+}
+
+/** 处理菜品图片加载完成 */
+function handleDishImageLoad(dishId: string) {
+  const status = dishImageStatus.value.get(dishId) ?? { loaded: false, error: false }
+  dishImageStatus.value.set(dishId, { ...status, loaded: true })
+}
+
+/** 处理菜品图片加载错误 */
+function handleDishImageError(dishId: string) {
+  dishImageStatus.value.set(dishId, { loaded: true, error: true })
+}
+
+/**
+ * 按分类预计算菜品数量（避免模板内 filter 重复计算）
+ * 使用 Map 提升查询性能
+ */
+const dishCountByCategory = computed(() => {
+  const countMap = new Map<string, number>()
+  for (const dish of dishes.value) {
+    if (dish.category_id) {
+      countMap.set(dish.category_id, (countMap.get(dish.category_id) ?? 0) + 1)
+    }
+  }
+  return countMap
+})
+
 const filteredDishes = computed({
   get: () => {
     let result = dishes.value
@@ -315,6 +351,19 @@ function addCustomTag() {
   }
 }
 
+/**
+ * 处理规格输入：将逗号分隔的字符串转换为字符串数组
+ * 提取自模板内联逻辑，便于维护与复用
+ * @param event 输入事件
+ */
+function handleSpecsInput(event: Event) {
+  const value = (event.target as HTMLInputElement).value
+  formData.value.specs = value
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+}
+
 function removeCustomTag(tag: string) {
   const index = customTags.value.indexOf(tag)
   if (index >= 0) {
@@ -373,7 +422,7 @@ onMounted(() => {
           >
             <GripVertical :size="12" class="drag-handle" />
             {{ cat.name }}
-            <span class="category-count">{{ dishes.filter(d => d.category_id === cat.id).length }}</span>
+            <span class="category-count">{{ dishCountByCategory.get(cat.id) || 0 }}</span>
             <span class="category-delete" @click.stop="handleDeleteCategory(cat.id)">
               <X :size="12" />
             </span>
@@ -415,8 +464,33 @@ onMounted(() => {
             <GripVertical :size="16" />
           </div>
           <div class="dish-image">
-            <img v-if="dish.image_url" :src="dish.image_url" :alt="dish.name" />
-            <div v-else class="image-placeholder">
+            <!-- 图片加载中占位符 -->
+            <div
+              v-if="dish.image_url && !getDishImageStatus(dish.id).loaded"
+              class="dish-image-loading"
+            >
+              <span class="loading-spinner-small"></span>
+            </div>
+            <!-- 图片加载错误占位符 -->
+            <div
+              v-if="dish.image_url && getDishImageStatus(dish.id).error"
+              class="dish-image-error"
+            >
+              <Image :size="24" />
+            </div>
+            <!-- 实际图片：懒加载 + 异步解码 -->
+            <img
+              v-if="dish.image_url"
+              :src="dish.image_url"
+              :alt="dish.name"
+              loading="lazy"
+              decoding="async"
+              :class="{ 'dish-image-loaded': getDishImageStatus(dish.id).loaded && !getDishImageStatus(dish.id).error }"
+              @load="handleDishImageLoad(dish.id)"
+              @error="handleDishImageError(dish.id)"
+            />
+            <!-- 无图片时的占位符 -->
+            <div v-if="!dish.image_url" class="image-placeholder">
               <Image :size="24" />
             </div>
           </div>
@@ -554,10 +628,10 @@ onMounted(() => {
         <div class="form-group full-width">
           <label>规格 (用逗号分隔)</label>
           <input
-            v-model="formData.specs"
+            :value="formData.specs.join(',')"
             type="text"
             placeholder="大份,中份,小份"
-            @input="formData.specs = ($event.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean)"
+            @input="handleSpecsInput"
           />
         </div>
       </div>
@@ -862,6 +936,7 @@ onMounted(() => {
 }
 
 .dish-image {
+  position: relative;
   width: 60px;
   height: 60px;
   border-radius: var(--radius-md);
@@ -873,6 +948,34 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+/* 图片加载完成后显示 */
+.dish-image img.dish-image-loaded {
+  opacity: 1;
+}
+
+/* 图片加载中占位符 */
+.dish-image-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-bg-tertiary);
+}
+
+/* 图片加载错误占位符 */
+.dish-image-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
 }
 
 .image-placeholder {

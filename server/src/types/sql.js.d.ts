@@ -15,6 +15,7 @@ declare module 'sql.js' {
     bind(params?: (string | number | null)[]): boolean
     step(): boolean
     getAsObject(): Record<string, unknown>
+    reset(): void
     free(): boolean
   }
 

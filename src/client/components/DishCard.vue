@@ -35,14 +35,33 @@ const modalQuantity = ref(1)
 
 const hasSpecs = computed(() => props.dish.specs && props.dish.specs.length > 0)
 
+/**
+ * 计算当前菜品在购物车中的数量
+ * 优化点：
+ * 1. 使用 for...of 循环替代 filter+reduce，避免创建中间数组
+ * 2. 无规格时提前 return，减少不必要的遍历
+ * 3. 缓存 dishId，减少属性访问
+ */
 const quantityInCart = computed(() => {
+  const dishId = props.dish.id
+  const items = cartStore.items
   if (hasSpecs.value) {
-    return cartStore.items
-      .filter(item => item.dish.id === props.dish.id)
-      .reduce((sum, item) => sum + item.quantity, 0)
+    // 有规格：累加所有匹配 dishId 的 item 数量
+    let total = 0
+    for (const item of items) {
+      if (item.dish.id === dishId) {
+        total += item.quantity
+      }
+    }
+    return total
   }
-  const item = cartStore.items.find(item => item.dish.id === props.dish.id && item.spec === null)
-  return item ? item.quantity : 0
+  // 无规格：找到匹配的第一个 item 并返回其数量
+  for (const item of items) {
+    if (item.dish.id === dishId && item.spec === null) {
+      return item.quantity
+    }
+  }
+  return 0
 })
 
 function handleAddToCart(e: Event) {
@@ -84,7 +103,11 @@ function handleUpdateQuantity(quantity: number) {
 </script>
 
 <template>
-  <div class="dish-card card card-hover" @click="emit('click')">
+  <div
+    class="dish-card card card-hover"
+    @click="emit('click')"
+    v-memo="[dish.id, quantityInCart]"
+  >
     <div class="dish-image">
       <!-- 图片加载占位符 -->
       <div v-if="dish.image_url && !imageLoaded" class="dish-image-loading">

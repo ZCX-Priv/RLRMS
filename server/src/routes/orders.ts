@@ -6,6 +6,7 @@ import { createOrderSchema, cancelOrderSchema } from '../validators/index.js'
 import { broadcastSSE } from '../utils/sse.js'
 import jwt from 'jsonwebtoken'
 import { JWT_SECRET } from '../utils/jwt.js'
+import { getCached, setCached, invalidatePattern } from '../utils/cache.js'
 
 const CLIENT_COOKIE_NAME = 'client_token'
 
@@ -19,6 +20,7 @@ interface ClientJwtPayload {
 /**
  * 客户端身份验证中间件
  * 验证 client_token cookie，并确认用户仍存在于数据库
+ * 用户存在性检查结果缓存 60 秒，减少数据库查询
  */
 function requireClientAuth(req: Request, res: Response, next: NextFunction) {
   const token = req.cookies?.[CLIENT_COOKIE_NAME]
@@ -29,13 +31,18 @@ function requireClientAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as ClientJwtPayload
 
-    // 校验用户是否仍存在于数据库中
-    const user = get<{ id: string }>(
-      'SELECT id FROM users WHERE id = ? AND role = ?',
-      [decoded.userId, 'customer']
-    )
-    if (!user) {
-      return res.status(401).json({ success: false, error: '用户不存在或已被删除' })
+    // 校验用户是否仍存在于数据库中（带缓存，TTL 60 秒）
+    const cacheKey = `user_exists:${decoded.userId}`
+    const cachedExists = getCached<boolean>(cacheKey)
+    if (cachedExists === undefined) {
+      const user = get<{ id: string }>(
+        'SELECT id FROM users WHERE id = ? AND role = ?',
+        [decoded.userId, 'customer']
+      )
+      if (!user) {
+        return res.status(401).json({ success: false, error: '用户不存在或已被删除' })
+      }
+      setCached(cacheKey, true, 60000)
     }
 
     // 将用户信息注入请求上下文
@@ -53,8 +60,9 @@ export const ordersRouter = Router()
 function generateOrderNo(): string {
   const now = new Date()
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '')
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0')
-  return `RL${dateStr}${random}`
+  const timeStr = now.getTime().toString().slice(-6) // 毫秒时间戳后6位
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
+  return `RL${dateStr}${timeStr}${random}`
 }
 
 // Get all orders (for user - requires client auth)
@@ -227,30 +235,37 @@ ordersRouter.post('/', requireClientAuth, (req, res) => {
       subtotal: number
       spec: string | null
     }[] = []
-    
+
+    // 批量查询所有菜品，避免 N+1 查询
+    const dishIds = items.map(item => item.dish_id)
+    const dishPlaceholders = dishIds.map(() => '?').join(',')
+    const dishes = all<{ id: string; name: string; price: number; status: string }>(
+      `SELECT id, name, price, status FROM dishes WHERE id IN (${dishPlaceholders})`,
+      dishIds
+    )
+    const dishMap = new Map(dishes.map(d => [d.id, d]))
+
     for (const item of items) {
-      const dish = get<{ id: string; name: string; price: number; status: string }>(
-        'SELECT id, name, price, status FROM dishes WHERE id = ?', [item.dish_id]
-      )
-      
+      const dish = dishMap.get(item.dish_id)
+
       if (!dish) {
         return res.status(400).json({
           success: false,
           error: `菜品不存在: ${item.dish_name}`
         })
       }
-      
+
       if (dish.status !== 'on_sale') {
         return res.status(400).json({
           success: false,
           error: `菜品已下架: ${dish.name}`
         })
       }
-      
+
       // 使用数据库实际价格重新计算
       const serverUnitPrice = dish.price
       const serverSubtotal = Math.round(serverUnitPrice * item.quantity * 100) / 100
-      
+
       verifiedItems.push({
         dish_id: item.dish_id,
         dish_name: dish.name,
@@ -280,6 +295,8 @@ ordersRouter.post('/', requireClientAuth, (req, res) => {
     // Update table status
     if (table_id) {
       run('UPDATE tables SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['reserved', table_id])
+      // 桌位状态变更：失效 tables 缓存
+      invalidatePattern('tables')
     }
     
     // Get the created order
@@ -365,6 +382,8 @@ ordersRouter.post('/:id/cancel', requireClientAuth, (req, res) => {
     
     if (order.table_id) {
       run('UPDATE tables SET status = \'available\', updated_at = CURRENT_TIMESTAMP WHERE id = ?', [order.table_id])
+      // 桌位状态变更：失效 tables 缓存
+      invalidatePattern('tables')
     }
     
     // SSE 广播订单取消事件

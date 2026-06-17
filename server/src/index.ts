@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser'
 import compression from 'compression'
 import { resolve } from 'path'
 import { initializeDatabase } from './db/init.js'
+import { startAutoSave } from './db/index.js'
 import { apiRouter } from './routes/index.js'
 
 if (process.platform === 'win32') {
@@ -58,8 +59,17 @@ export function createApp(): Express {
     next()
   })
 
+  // 静态文件服务（放在 dbReady 检查之前，确保数据库初始化期间静态资源可访问）
+  app.use('/sources', express.static(resolve(process.cwd(), 'public/sources'), {
+    maxAge: '7d',
+    etag: true,
+    lastModified: true,
+    immutable: true,
+  }))
+
+  // 数据库就绪检查（仅对 API 路由生效）
   app.use((req, res, next) => {
-    if (!dbReady && req.path !== '/health') {
+    if (!dbReady && req.path !== '/health' && !req.path.startsWith('/sources')) {
       res.status(503).json({ 
         success: false, 
         error: 'Service unavailable - database initializing',
@@ -69,12 +79,6 @@ export function createApp(): Express {
     }
     next()
   })
-
-  app.use('/sources', express.static(resolve(process.cwd(), 'public/sources'), {
-    maxAge: '7d',
-    etag: true,
-    lastModified: true,
-  }))
 
   app.use('/api', apiRouter)
 
@@ -133,6 +137,7 @@ export function initDb(server: ReturnType<Express['listen']>) {
   dbInitPromise = initializeDatabase()
     .then(() => {
       dbReady = true
+      startAutoSave()
       console.log('Database initialized successfully')
     })
     .catch((error) => {

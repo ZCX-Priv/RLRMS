@@ -68,10 +68,18 @@ export const useAppStore = defineStore('app', () => {
     type: 'info',
   })
 
+  // Toast 定时器引用：连续调用 showToast 时清除前一个定时器，避免定时器叠加
+  let toastTimer: ReturnType<typeof setTimeout> | null = null
+
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
+    // 清除前一个定时器，确保连续调用时不会提前隐藏新的 toast
+    if (toastTimer) {
+      clearTimeout(toastTimer)
+    }
     toast.value = { show: true, message, type }
-    setTimeout(() => {
+    toastTimer = setTimeout(() => {
       toast.value.show = false
+      toastTimer = null
     }, 3000)
   }
 

@@ -73,6 +73,104 @@ async function request<T>(
   }
 }
 
+// ===== 请求缓存与去重机制 =====
+
+/** 缓存条目结构 */
+interface CacheEntry<T> {
+  data: T
+  expireAt: number
+}
+
+/** 进行中的请求映射：key -> Promise，用于请求去重 */
+const inflightRequests = new Map<string, Promise<unknown>>()
+
+/** 响应缓存映射：key -> CacheEntry */
+const responseCache = new Map<string, CacheEntry<unknown>>()
+
+/** 默认缓存 TTL：5 秒 */
+const DEFAULT_CACHE_TTL = 5000
+
+/**
+ * 生成缓存/去重键
+ * 仅对 GET 请求（无 body）启用缓存，POST/PUT/DELETE 不缓存
+ */
+function buildCacheKey(endpoint: string, options: RequestOptions): string | null {
+  // 仅对无 body 的请求（GET 语义）启用缓存
+  const method = (options.method || 'GET').toUpperCase()
+  if (method !== 'GET' || options.body) {
+    return null
+  }
+  return `${method}:${endpoint}`
+}
+
+/**
+ * 带缓存与去重的请求函数
+ * - 相同 endpoint 的并发请求会共享同一个 Promise（inflight 去重）
+ * - 命中未过期缓存时直接返回缓存数据
+ * - TTL 到期后自动失效
+ * @param endpoint API 端点
+ * @param options 请求选项
+ * @param ttl 缓存有效期（毫秒），默认 5000ms
+ */
+async function cachedRequest<T>(
+  endpoint: string,
+  options: RequestOptions = {},
+  ttl: number = DEFAULT_CACHE_TTL
+): Promise<T> {
+  const cacheKey = buildCacheKey(endpoint, options)
+  
+  // 非 GET 请求直接走原始 request
+  if (!cacheKey) {
+    return request<T>(endpoint, options)
+  }
+  
+  // 1. 检查缓存是否命中
+  const cached = responseCache.get(cacheKey) as CacheEntry<T> | undefined
+  if (cached && cached.expireAt > Date.now()) {
+    return cached.data
+  }
+  
+  // 2. 检查是否有进行中的相同请求（去重）
+  const inflight = inflightRequests.get(cacheKey) as Promise<T> | undefined
+  if (inflight) {
+    return inflight
+  }
+  
+  // 3. 发起新请求并缓存 Promise
+  const promise = request<T>(endpoint, options)
+    .then((data) => {
+      // 请求成功，写入响应缓存
+      responseCache.set(cacheKey, {
+        data,
+        expireAt: Date.now() + ttl,
+      })
+      return data
+    })
+    .finally(() => {
+      // 无论成功失败，都从 inflight 中移除
+      inflightRequests.delete(cacheKey)
+    })
+  
+  inflightRequests.set(cacheKey, promise)
+  return promise
+}
+
+/**
+ * 失效指定端点的缓存（用于数据变更后主动刷新）
+ * @param endpoint API 端点
+ */
+export function invalidateCache(endpoint: string): void {
+  const cacheKey = buildCacheKey(endpoint, { method: 'GET' })
+  if (cacheKey) {
+    responseCache.delete(cacheKey)
+  }
+}
+
+/** 失效所有缓存 */
+export function clearAllCache(): void {
+  responseCache.clear()
+}
+
 // Export a utility function for creating cancellable requests
 export function createCancellableRequest<T>(
   endpoint: string,
@@ -87,8 +185,13 @@ export function createCancellableRequest<T>(
 
 export const api = {
   // Home data (combined endpoint for low bandwidth optimization)
+  // 使用 30 秒缓存，首页数据相对稳定
   async getHomeData() {
-    return request<{ success: boolean; data: { categories: Category[]; dishes: Dish[] } }>('/dishes/home-data')
+    return cachedRequest<{ success: boolean; data: { categories: Category[]; dishes: Dish[] } }>(
+      '/dishes/home-data',
+      {},
+      30000
+    )
   },
   
   // Dishes
@@ -105,17 +208,32 @@ export const api = {
     return request<{ success: boolean; data: Dish[] }>(`/dishes/search/query?q=${encodeURIComponent(query)}`)
   },
   
+  // 分类数据相对稳定，使用 30 秒缓存
   async getCategories() {
-    return request<{ success: boolean; data: Category[] }>('/dishes/categories/all')
+    return cachedRequest<{ success: boolean; data: Category[] }>(
+      '/dishes/categories/all',
+      {},
+      30000
+    )
   },
   
   // Tables
+  // 桌位列表使用 30 秒缓存
   async getTables() {
-    return request<{ success: boolean; data: Table[] }>('/tables')
+    return cachedRequest<{ success: boolean; data: Table[] }>(
+      '/tables',
+      {},
+      30000
+    )
   },
   
+  // 可用桌位使用 30 秒缓存
   async getAvailableTables() {
-    return request<{ success: boolean; data: Table[] }>('/tables/available')
+    return cachedRequest<{ success: boolean; data: Table[] }>(
+      '/tables/available',
+      {},
+      30000
+    )
   },
 
   async getAvailableTablesFor(diningTime: string) {
@@ -269,8 +387,13 @@ export const api = {
     })
   },
   
+  // 管理端分类数据使用 30 秒缓存
   async getAdminCategories() {
-    return request<{ success: boolean; data: Category[] }>('/admin/categories')
+    return cachedRequest<{ success: boolean; data: Category[] }>(
+      '/admin/categories',
+      {},
+      30000
+    )
   },
   
   async createCategory(name: string, sortOrder?: number) {
@@ -343,8 +466,13 @@ export const api = {
     })
   },
   
+  // 系统设置数据相对稳定，使用 30 秒缓存
   async getSettings() {
-    return request<{ success: boolean; data: Record<string, string> }>('/admin/settings')
+    return cachedRequest<{ success: boolean; data: Record<string, string> }>(
+      '/admin/settings',
+      {},
+      30000
+    )
   },
   
   // User Management

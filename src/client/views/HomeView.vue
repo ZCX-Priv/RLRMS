@@ -711,13 +711,11 @@ onMounted(async () => {
 
 @-webkit-keyframes cartSlideIn {
   0% {
-    max-height: 0;
     opacity: 0;
     -webkit-transform: translateY(20px);
     transform: translateY(20px);
   }
   100% {
-    max-height: 40vh;
     opacity: 1;
     -webkit-transform: translateY(0);
     transform: translateY(0);
@@ -726,12 +724,10 @@ onMounted(async () => {
 
 @keyframes cartSlideIn {
   0% {
-    max-height: 0;
     opacity: 0;
     transform: translateY(20px);
   }
   100% {
-    max-height: 40vh;
     opacity: 1;
     transform: translateY(0);
   }
@@ -739,13 +735,11 @@ onMounted(async () => {
 
 @-webkit-keyframes cartSlideOut {
   0% {
-    max-height: 40vh;
     opacity: 1;
     -webkit-transform: translateY(0);
     transform: translateY(0);
   }
   100% {
-    max-height: 0;
     opacity: 0;
     -webkit-transform: translateY(10px);
     transform: translateY(10px);
@@ -754,12 +748,10 @@ onMounted(async () => {
 
 @keyframes cartSlideOut {
   0% {
-    max-height: 40vh;
     opacity: 1;
     transform: translateY(0);
   }
   100% {
-    max-height: 0;
     opacity: 0;
     transform: translateY(10px);
   }

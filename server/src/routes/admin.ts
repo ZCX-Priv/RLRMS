@@ -1,11 +1,12 @@
 import { Router, type Request, type Response, type NextFunction } from 'express'
-import { all, get, run, beginBatch, endBatch } from '../db/index.js'
+import { all, get, run, beginBatch, endBatch, runBatchPrepared } from '../db/index.js'
 import { v4 as uuidv4 } from 'uuid'
 import jwt from 'jsonwebtoken'
 import { randomBytes } from 'crypto'
 import multer from 'multer'
 import { resolve, extname, normalize } from 'path'
-import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync, createReadStream } from 'fs'
+import { existsSync, mkdirSync, readdirSync, createReadStream } from 'fs'
+import { unlink, writeFile } from 'fs/promises'
 import bcrypt from 'bcryptjs'
 import { formatDateTime } from '../utils/format.js'
 import { createDishSchema, updateDishSchema, createTableSchema, createCategorySchema, createInventorySchema, updateInventorySchema, updateOrderStatusSchema, confirmResetSchema, createUserSchema, updateUserSchema } from '../validators/index.js'
@@ -14,6 +15,7 @@ import AdmZip from 'adm-zip'
 import archiver from 'archiver'
 import { addSSEClient, removeSSEClient, broadcastSSE } from '../utils/sse.js'
 import { JWT_SECRET } from '../utils/jwt.js'
+import { getCached, setCached, invalidateCache, invalidatePattern, clearAllCache } from '../utils/cache.js'
 
 function safeJsonParse<T>(jsonString: string | null | undefined, defaultValue: T): T {
   if (!jsonString) return defaultValue
@@ -46,7 +48,7 @@ if (!existsSync(sourcesDir)) {
  * 删除菜品图片（如果未被其他菜品使用）
  * @param imageUrl 图片URL，格式为 /sources/filename
  */
-function deleteDishImageIfUnused(imageUrl: string | null): void {
+async function deleteDishImageIfUnused(imageUrl: string | null): Promise<void> {
   if (!imageUrl) {
     return
   }
@@ -70,10 +72,10 @@ function deleteDishImageIfUnused(imageUrl: string | null): void {
     return
   }
 
-  // 检查文件是否存在并删除
+  // 检查文件是否存在并删除（异步操作）
   if (existsSync(filePath)) {
     try {
-      unlinkSync(filePath)
+      await unlink(filePath)
     } catch (e) {
       console.error('Failed to delete image file:', filePath, e)
     }
@@ -139,6 +141,13 @@ adminRouter.get('/events', requireAuth, (req: Request, res: Response) => {
   res.flushHeaders()
 
   const client = addSSEClient(res)
+
+  // 超过最大连接数限制，拒绝新连接
+  if (!client) {
+    res.write(`event: error\ndata: {"error":"Maximum SSE connections reached"}\n\n`)
+    res.end()
+    return
+  }
 
   // 发送初始连接确认
   res.write(`event: connected\ndata: {"clientId":"${client.id}"}\n\n`)
@@ -211,10 +220,11 @@ adminRouter.get('/dashboard', requireAuth, (req, res) => {
 
 adminRouter.get('/tables', requireAuth, (req, res) => {
   try {
+    // 使用 LEFT JOIN 替代相关子查询，避免 N+1 问题
     const tables = all(`
-      SELECT t.*, 
-        (SELECT o.order_no FROM orders o WHERE o.table_id = t.id AND o.status = 'pending' LIMIT 1) as current_order
+      SELECT t.*, o.order_no as current_order
       FROM tables t
+      LEFT JOIN orders o ON o.table_id = t.id AND o.status = 'pending'
       ORDER BY t.table_no
     `)
     res.json({ success: true, data: tables })
@@ -230,7 +240,7 @@ adminRouter.put('/tables/:id', requireAuth, (req, res) => {
     const { status, table_no, name, capacity } = req.body
     
     if (table_no !== undefined || name !== undefined || capacity !== undefined) {
-      const existing = get<{ id: string }>('SELECT * FROM tables WHERE id = ?', [id])
+      const existing = get<{ id: string }>('SELECT id FROM tables WHERE id = ?', [id])
       if (!existing) {
         return res.status(404).json({ success: false, error: 'Table not found' })
       }
@@ -246,9 +256,13 @@ adminRouter.put('/tables/:id', requireAuth, (req, res) => {
       `, [table_no ?? null, name ?? null, capacity ?? null, status ?? null, id])
       
       const table = get('SELECT * FROM tables WHERE id = ?', [id])
+      // 桌位变更：失效 tables、tables_available 缓存
+      invalidatePattern('tables')
       res.json({ success: true, data: table })
     } else {
       run('UPDATE tables SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, id])
+      // 桌位变更：失效 tables、tables_available 缓存
+      invalidatePattern('tables')
       res.json({ success: true, message: 'Table status updated' })
     }
   } catch (error) {
@@ -284,6 +298,8 @@ adminRouter.post('/tables', requireAuth, (req, res) => {
     run('INSERT INTO tables (id, table_no, name, capacity) VALUES (?, ?, ?, ?)', [id, table_no, name, capacity || 4])
     
     const table = get('SELECT * FROM tables WHERE id = ?', [id])
+    // 桌位变更：失效 tables、tables_available 缓存
+    invalidatePattern('tables')
     res.status(201).json({ success: true, data: table })
   } catch (error) {
     console.error('Error creating table:', error)
@@ -314,6 +330,8 @@ adminRouter.delete('/tables/:id', requireAuth, (req, res) => {
     }
     
     run('DELETE FROM tables WHERE id = ?', [id])
+    // 桌位变更：失效 tables、tables_available 缓存
+    invalidatePattern('tables')
     res.json({ success: true, message: 'Table deleted' })
   } catch (error) {
     console.error('Error deleting table:', error)
@@ -341,6 +359,7 @@ adminRouter.get('/dishes', requireAuth, (req, res) => {
       FROM dishes d 
       LEFT JOIN categories c ON d.category_id = c.id 
       ORDER BY c.sort_order, d.sort_order, d.created_at DESC
+      LIMIT 500
     `)
     
     const result = dishes.map(dish => ({
@@ -404,6 +423,10 @@ adminRouter.post('/dishes', requireAuth, (req, res) => {
       specs: safeJsonParse(dish?.specs, []),
     }
     
+    // 菜品变更：失效 home_data（包含菜品）和 admin_ 前缀缓存
+    invalidatePattern('home_data')
+    invalidatePattern('admin_')
+    
     res.status(201).json({ success: true, data: result })
   } catch (error) {
     console.error('Error creating dish:', error)
@@ -422,10 +445,16 @@ adminRouter.put('/dishes/reorder', requireAuth, (req, res) => {
     }
     
     beginBatch()
-    for (const item of orders) {
-      run('UPDATE dishes SET sort_order = ? WHERE id = ?', [item.sort_order, item.id])
-    }
+    // 复用预处理语句：循环外 prepare 一次，循环内 bind + step + reset
+    runBatchPrepared(
+      'UPDATE dishes SET sort_order = ? WHERE id = ?',
+      orders.map(item => [item.sort_order, item.id])
+    )
     endBatch()
+    
+    // 菜品变更：失效 home_data（包含菜品）和 admin_ 前缀缓存
+    invalidatePattern('home_data')
+    invalidatePattern('admin_')
     
     res.json({ success: true, message: 'Dishes reordered' })
   } catch (error) {
@@ -434,7 +463,7 @@ adminRouter.put('/dishes/reorder', requireAuth, (req, res) => {
   }
 })
 
-adminRouter.put('/dishes/:id', requireAuth, (req, res) => {
+adminRouter.put('/dishes/:id', requireAuth, async (req, res) => {
   try {
     const id = req.params.id as string
     
@@ -464,7 +493,7 @@ adminRouter.put('/dishes/:id', requireAuth, (req, res) => {
     
     // 如果图片发生变化，删除旧图片（如果未被其他菜品使用）
     if (imageChanged && oldImageUrl) {
-      deleteDishImageIfUnused(oldImageUrl)
+      await deleteDishImageIfUnused(oldImageUrl)
     }
     
     const dish = get<{
@@ -491,6 +520,10 @@ adminRouter.put('/dishes/:id', requireAuth, (req, res) => {
       specs: safeJsonParse(dish?.specs, []),
     }
     
+    // 菜品变更：失效 home_data（包含菜品）和 admin_ 前缀缓存
+    invalidatePattern('home_data')
+    invalidatePattern('admin_')
+    
     res.json({ success: true, data: result })
   } catch (error) {
     console.error('Error updating dish:', error)
@@ -498,7 +531,7 @@ adminRouter.put('/dishes/:id', requireAuth, (req, res) => {
   }
 })
 
-adminRouter.delete('/dishes/:id', requireAuth, (req, res) => {
+adminRouter.delete('/dishes/:id', requireAuth, async (req, res) => {
   try {
     const id = req.params.id as string
     
@@ -512,8 +545,12 @@ adminRouter.delete('/dishes/:id', requireAuth, (req, res) => {
     run('DELETE FROM dishes WHERE id = ?', [id])
     
     if (imageUrl) {
-      deleteDishImageIfUnused(imageUrl)
+      await deleteDishImageIfUnused(imageUrl)
     }
+    
+    // 菜品变更：失效 home_data（包含菜品）和 admin_ 前缀缓存
+    invalidatePattern('home_data')
+    invalidatePattern('admin_')
     
     res.json({ success: true, message: 'Dish deleted' })
   } catch (error) {
@@ -526,7 +563,18 @@ adminRouter.delete('/dishes/:id', requireAuth, (req, res) => {
 
 adminRouter.get('/categories', requireAuth, (req, res) => {
   try {
-    const categories = all('SELECT * FROM categories ORDER BY sort_order')
+    // 尝试命中缓存
+    const cacheKey = 'admin_categories'
+    const cached = getCached<{ id: string; name: string; sort_order: number }[]>(cacheKey)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
+
+    const categories = all<{ id: string; name: string; sort_order: number }>(
+      'SELECT id, name, sort_order FROM categories ORDER BY sort_order'
+    )
+    // 写入缓存，TTL 60 秒
+    setCached(cacheKey, categories, 60000)
     res.json({ success: true, data: categories })
   } catch (error) {
     console.error('Error fetching categories:', error)
@@ -560,6 +608,12 @@ adminRouter.post('/categories', requireAuth, (req, res) => {
     run('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)', [id, name.trim(), sort_order || 0])
     
     const category = get('SELECT * FROM categories WHERE id = ?', [id])
+    
+    // 分类变更：失效 categories、home_data（包含分类）、admin_ 前缀缓存
+    invalidatePattern('categories')
+    invalidatePattern('home_data')
+    invalidatePattern('admin_')
+    
     res.status(201).json({ success: true, data: category })
   } catch (error) {
     console.error('Error creating category:', error)
@@ -581,6 +635,12 @@ adminRouter.delete('/categories/:id', requireAuth, (req, res) => {
     }
     
     run('DELETE FROM categories WHERE id = ?', [id])
+    
+    // 分类变更：失效 categories、home_data（包含分类）、admin_ 前缀缓存
+    invalidatePattern('categories')
+    invalidatePattern('home_data')
+    invalidatePattern('admin_')
+    
     res.json({ success: true, message: 'Category deleted' })
   } catch (error) {
     console.error('Error deleting category:', error)
@@ -597,10 +657,17 @@ adminRouter.put('/categories/reorder', requireAuth, (req, res) => {
     }
     
     beginBatch()
-    for (const item of orders) {
-      run('UPDATE categories SET sort_order = ? WHERE id = ?', [item.sort_order, item.id])
-    }
+    // 复用预处理语句：循环外 prepare 一次，循环内 bind + step + reset
+    runBatchPrepared(
+      'UPDATE categories SET sort_order = ? WHERE id = ?',
+      orders.map(item => [item.sort_order, item.id])
+    )
     endBatch()
+    
+    // 分类变更：失效 categories、home_data（包含分类）、admin_ 前缀缓存
+    invalidatePattern('categories')
+    invalidatePattern('home_data')
+    invalidatePattern('admin_')
     
     res.json({ success: true, message: 'Categories reordered' })
   } catch (error) {
@@ -632,7 +699,7 @@ adminRouter.get('/orders', requireAuth, (req, res) => {
       params.push(date as string)
     }
     
-    query += ' ORDER BY o.created_at DESC'
+    query += ' ORDER BY o.created_at DESC LIMIT 200'
     
     const orders = all<{
       id: string
@@ -774,7 +841,9 @@ adminRouter.put('/orders/:id/status', requireAuth, (req, res) => {
     
     const { status } = validation.data
     
-    const order = get<{ id: string; table_id: string | null; status: string }>('SELECT * FROM orders WHERE id = ?', [id])
+    const order = get<{ id: string; table_id: string | null; status: string }>(
+      'SELECT id, table_id, status FROM orders WHERE id = ?', [id]
+    )
     
     if (!order) {
       return res.status(404).json({ success: false, error: 'Order not found' })
@@ -786,6 +855,8 @@ adminRouter.put('/orders/:id/status', requireAuth, (req, res) => {
     // If order is completed or cancelled, free the table
     if ((status === 'completed' || status === 'cancelled') && order.table_id) {
       run('UPDATE tables SET status = \'available\', updated_at = CURRENT_TIMESTAMP WHERE id = ?', [order.table_id])
+      // 桌位状态变更：失效 tables 缓存
+      invalidatePattern('tables')
     }
     
     // SSE 广播订单状态变更事件
@@ -802,7 +873,7 @@ adminRouter.put('/orders/:id/status', requireAuth, (req, res) => {
 
 adminRouter.get('/inventory', requireAuth, (req, res) => {
   try {
-    const inventory = all('SELECT * FROM inventory ORDER BY sort_order, material_name')
+    const inventory = all('SELECT * FROM inventory ORDER BY sort_order, material_name LIMIT 500')
     res.json({ success: true, data: inventory })
   } catch (error) {
     console.error('Error fetching inventory:', error)
@@ -850,9 +921,11 @@ adminRouter.put('/inventory/reorder', requireAuth, (req, res) => {
     }
     
     beginBatch()
-    for (const item of orders) {
-      run('UPDATE inventory SET sort_order = ? WHERE id = ?', [item.sort_order, item.id])
-    }
+    // 复用预处理语句：循环外 prepare 一次，循环内 bind + step + reset
+    runBatchPrepared(
+      'UPDATE inventory SET sort_order = ? WHERE id = ?',
+      orders.map(item => [item.sort_order, item.id])
+    )
     endBatch()
     
     res.json({ success: true, message: 'Inventory reordered' })
@@ -929,7 +1002,7 @@ adminRouter.get('/users', requireAuth, (req, res) => {
       phone: string | null
       created_at: string
       updated_at: string
-    }>('SELECT id, username, role, name, phone, created_at, updated_at FROM users ORDER BY created_at ASC')
+    }>('SELECT id, username, role, name, phone, created_at, updated_at FROM users ORDER BY created_at ASC LIMIT 200')
     res.json({ success: true, data: users })
   } catch (error) {
     console.error('Error fetching users:', error)
@@ -1061,11 +1134,20 @@ adminRouter.delete('/users/:id', requireAuth, (req, res) => {
 
 adminRouter.get('/settings', requireAuth, (req, res) => {
   try {
+    // 尝试命中缓存
+    const cacheKey = 'admin_settings'
+    const cached = getCached<Record<string, string>>(cacheKey)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
+
     const settings = all<{ key: string; value: string }>('SELECT key, value FROM settings')
     const settingsMap: Record<string, string> = {}
     for (const s of settings) {
       settingsMap[s.key] = s.value
     }
+    // 写入缓存，TTL 60 秒
+    setCached(cacheKey, settingsMap, 60000)
     res.json({ success: true, data: settingsMap })
   } catch (error) {
     console.error('Error fetching settings:', error)
@@ -1082,6 +1164,8 @@ adminRouter.put('/settings', requireAuth, (req, res) => {
         [key, value, value]
       )
     }
+    // 设置变更：失效 admin_settings 缓存
+    invalidateCache('admin_settings')
     res.json({ success: true, message: 'Settings updated' })
   } catch (error) {
     console.error('Error updating settings:', error)
@@ -1091,7 +1175,7 @@ adminRouter.put('/settings', requireAuth, (req, res) => {
 
 // ===== Reset Database =====
 
-adminRouter.post('/reset-database', requireAuth, (req, res) => {
+adminRouter.post('/reset-database', requireAuth, async (req, res) => {
   try {
     // 二次确认机制：必须提供 confirm: 'RESET'
     const validation = confirmResetSchema.safeParse(req.body)
@@ -1116,7 +1200,7 @@ adminRouter.post('/reset-database', requireAuth, (req, res) => {
       for (const file of files) {
         const filePath = resolve(sourcesDir, file)
         try {
-          unlinkSync(filePath)
+          await unlink(filePath)
         } catch (e) {
           console.error('Failed to delete file:', filePath, e)
         }
@@ -1143,6 +1227,9 @@ adminRouter.post('/reset-database', requireAuth, (req, res) => {
       'UPDATE users SET password = ?, name = ? WHERE role = ?',
       [hashedPassword, '管理员', 'admin']
     )
+    
+    // 数据库重置：清空所有缓存
+    clearAllCache()
     
     res.json({ success: true, message: 'Database reset successfully' })
   } catch (error) {
@@ -1211,9 +1298,9 @@ adminRouter.post('/upload', requireAuth, upload.single('image'), async (req, res
       .webp({ quality: IMAGE_QUALITY })
       .toFile(outputPath)
     
-    // 删除原始上传的文件
+    // 删除原始上传的文件（异步操作）
     try {
-      unlinkSync(inputPath)
+      await unlink(inputPath)
     } catch (e) {
       console.error('Failed to delete original file:', inputPath, e)
     }
@@ -1228,7 +1315,7 @@ adminRouter.post('/upload', requireAuth, upload.single('image'), async (req, res
 
 // ===== Delete Image =====
 
-adminRouter.delete('/image', requireAuth, (req, res) => {
+adminRouter.delete('/image', requireAuth, async (req, res) => {
   try {
     const { url } = req.body
     
@@ -1256,7 +1343,7 @@ adminRouter.delete('/image', requireAuth, (req, res) => {
       return res.status(404).json({ success: false, error: '图片文件不存在' })
     }
     
-    unlinkSync(filePath)
+    await unlink(filePath)
     res.json({ success: true, message: '图片删除成功' })
   } catch (error) {
     console.error('Error deleting image:', error)
@@ -1334,7 +1421,7 @@ interface OrderItemData {
  * 数据导入端点
  * 接收 ZIP 文件，验证结构，导入数据
  */
-adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) => {
+adminRouter.post('/import', requireAuth, uploadZip.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: '请上传 ZIP 文件' })
@@ -1551,11 +1638,14 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
           // 安全检查：确保文件路径在 sourcesDir 目录下
           if (outputPath.startsWith(sourcesDir)) {
             const imageData = imageEntry.getData()
-            writeFileSync(outputPath, imageData)
+            await writeFile(outputPath, imageData)
             stats.images++
           }
         }
       }
+
+      // 数据导入完成：清空所有缓存
+      clearAllCache()
 
       res.json({
         success: true,
@@ -1653,11 +1743,27 @@ adminRouter.get('/export', requireAuth, (req, res) => {
     // 将 ZIP 流管道到响应
     archive.pipe(res)
 
-    // 将订单项嵌入到订单中
-    const ordersWithItems = orders.map((order: { id: string }) => {
-      const items = orderItems.filter((item: { order_id: string }) => item.order_id === order.id)
-      return { ...order, items }
-    })
+    // 将订单项嵌入到订单中（使用 Map 分组，避免 O(n*m) 嵌套遍历）
+    type OrderRow = { id: string } & Record<string, unknown>
+    type OrderItemRow = { order_id: string } & Record<string, unknown>
+    const typedOrders = orders as OrderRow[]
+    const typedOrderItems = orderItems as OrderItemRow[]
+
+    // 按 order_id 分组订单项
+    const itemsByOrder = new Map<string, OrderItemRow[]>()
+    for (const item of typedOrderItems) {
+      const list = itemsByOrder.get(item.order_id)
+      if (list) {
+        list.push(item)
+      } else {
+        itemsByOrder.set(item.order_id, [item])
+      }
+    }
+
+    const ordersWithItems = typedOrders.map(order => ({
+      ...order,
+      items: itemsByOrder.get(order.id) || []
+    }))
 
     // 7. 添加数据文件到 ZIP
     archive.append(JSON.stringify(manifest, null, 2), { name: 'data/manifest.json' })
