@@ -26,6 +26,8 @@ const dateFilter = ref('today')
 const autoRefreshEnabled = ref(true)
 const newOrderCount = ref(0)
 const showNewOrderNotification = ref(false)
+const addDishRequestCount = ref(0)
+let addDishResetTimer: ReturnType<typeof setTimeout> | null = null
 
 // 订单查询相关
 const showSearchModal = ref(false)
@@ -348,9 +350,16 @@ function connectSSE() {
       if (selectedOrder.value?.id === id) {
         selectedOrder.value = { ...selectedOrder.value, status }
       }
-      // 加菜事件：弹 toast 并刷新订单列表以获取新菜品
+      // 加菜事件：累加计数、弹 toast 并刷新订单列表以获取新菜品
       if (type === 'add_items') {
-        appStore.showToast('收到加菜请求，请确认', 'info')
+        addDishRequestCount.value++
+        appStore.showToast(`收到${addDishRequestCount.value}条加菜请求，请确认`, 'info')
+        // 10秒后自动重置计数器
+        if (addDishResetTimer) clearTimeout(addDishResetTimer)
+        addDishResetTimer = setTimeout(() => {
+          addDishRequestCount.value = 0
+          addDishResetTimer = null
+        }, 10000)
         fetchOrders(false)
       } else {
         fetchDashboard(false)
@@ -361,7 +370,7 @@ function connectSSE() {
   })
   
   es.onerror = () => {
-    sseConnected.value = true
+    sseConnected.value = false
     es.close()
     eventSource = null
     // SSE 断开后启用轮询作为降级方案
@@ -441,6 +450,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   disconnectSSE()
+  if (addDishResetTimer) {
+    clearTimeout(addDishResetTimer)
+    addDishResetTimer = null
+  }
 })
 </script>
 
