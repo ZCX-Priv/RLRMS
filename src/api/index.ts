@@ -49,6 +49,15 @@ async function request<T>(
       credentials: 'include',
     })
 
+    // 非 JSON 响应防御：防止 HTML 等格式绕过 401/错误处理器直接抛出 SyntaxError
+    const contentType = response.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      throw new ApiError(
+        `Server returned non-JSON response (${response.status} ${contentType.split(';')[0] || 'unknown'})`,
+        response.status
+      )
+    }
+
     const data = await response.json()
 
     // Handle 401 Unauthorized - trigger global auth expired event
@@ -150,6 +159,14 @@ export const api = {
   
   async getOrder(id: string) {
     return request<{ success: boolean; data: Order }>(`/orders/${id}`)
+  },
+
+  async verifyOrders(ids: string[]) {
+    return request<{ success: boolean; data: string[] }>('/orders/verify', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+      skip401Handler: true,
+    })
   },
   
   async cancelOrder(id: string, phone: string) {

@@ -17,6 +17,9 @@ async function startDevServer() {
   // 挂载 Vite 中间件到 Express
   app.use(vite.middlewares)
 
+  // transformIndexHtml 警告去重：vite:json 插件每次页面请求都会触发，只打印一次
+  const warnedMessages = new Set<string>()
+
   // 对非 API / sources 的请求，返回 Vite 转换后的 index.html（SPA fallback）
   app.use('*', async (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/sources') || req.path.startsWith('/health')) {
@@ -29,10 +32,14 @@ async function startDevServer() {
       try {
         template = await vite.transformIndexHtml(req.originalUrl, template)
       } catch (transformErr) {
-        // Vite 7 transformIndexHtml 可能抛出非致命错误（如 JSON 解析），
+        // Vite 7 transformIndexHtml 可能抛出非致命错误（如 vite:json 插件解析），
         // 如果 template 仍有效则继续使用，否则向上抛出
         if (!template) throw transformErr
-        console.warn('transformIndexHtml warning:', (transformErr as Error).message)
+        const msg = (transformErr as Error).message
+        if (!warnedMessages.has(msg)) {
+          warnedMessages.add(msg)
+          console.warn('transformIndexHtml warning (suppressed duplicates):', msg)
+        }
       }
       res.status(200).set({ 'Content-Type': 'text/html' }).end(template)
     } catch (e) {

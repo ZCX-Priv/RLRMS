@@ -37,7 +37,21 @@ async function fetchOrders() {
     }
     const phone = clientAuthStore.user?.phone || undefined
     const res = await api.getOrders(phone)
-    orders.value = res.data
+    // 验证订单存在性，清除幽灵订单
+    const list = res.data
+    if (list.length > 0) {
+      try {
+        const ids = list.map(o => o.id)
+        const verifyRes = await api.verifyOrders(ids)
+        const validIds = new Set(verifyRes.data)
+        orders.value = list.filter(o => validIds.has(o.id))
+      } catch {
+        // verify 失败时降级：信任 getOrders 返回的数据
+        orders.value = list
+      }
+    } else {
+      orders.value = []
+    }
     initialized.value = true
   } catch (error) {
     console.error('Failed to fetch orders:', error)
@@ -79,7 +93,21 @@ async function pollOrders() {
   try {
     const phone = clientAuthStore.user?.phone || undefined
     const res = await api.getOrders(phone)
-    orders.value = res.data
+    // 验证订单存在性，清除幽灵订单
+    const list = res.data
+    if (list.length > 0) {
+      try {
+        const ids = list.map(o => o.id)
+        const verifyRes = await api.verifyOrders(ids)
+        const validIds = new Set(verifyRes.data)
+        orders.value = list.filter(o => validIds.has(o.id))
+      } catch {
+        // verify 失败时降级：信任 getOrders 返回的数据
+        orders.value = list
+      }
+    } else {
+      orders.value = []
+    }
   } catch (error) {
     console.error('Polling orders error:', error)
     orders.value = []

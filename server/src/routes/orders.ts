@@ -133,6 +133,25 @@ ordersRouter.get('/', requireClientAuth, (req, res) => {
   }
 })
 
+// 批量验证订单是否存在（清除幽灵订单）
+// 注意：此接口仅做 ID 存在性校验，不涉及敏感数据，无需客户端认证
+ordersRouter.post('/verify', (req, res) => {
+  try {
+    const { ids } = req.body as { ids: string[] }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.json({ success: true, data: [] })
+    }
+    const placeholders = ids.map(() => '?').join(',')
+    const existing = all<{ id: string }>(
+      `SELECT id FROM orders WHERE id IN (${placeholders})`, ids
+    )
+    res.json({ success: true, data: existing.map(o => o.id) })
+  } catch (error) {
+    console.error('Error verifying orders:', error)
+    res.status(500).json({ success: false, error: '验证失败' })
+  }
+})
+
 // Get order by ID
 ordersRouter.get('/:id', requireClientAuth, (req, res) => {
   try {
