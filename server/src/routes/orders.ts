@@ -158,7 +158,7 @@ ordersRouter.get('/:id', requireClientAuth, (req, res) => {
     `, [id])
     
     if (!order) {
-      return res.status(404).json({ success: false, error: 'Order not found' })
+      return res.status(404).json({ success: false, error: '订单不存在', notFound: true })
     }
     
     const items = all('SELECT * FROM order_items WHERE order_id = ?', [id])

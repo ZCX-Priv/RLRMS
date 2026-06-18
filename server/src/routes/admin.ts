@@ -996,6 +996,11 @@ adminRouter.put('/users/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ success: false, error: '用户不存在' })
     }
 
+    // 主管理员不可编辑
+    if (existing.username === 'admin') {
+      return res.status(400).json({ success: false, error: '主管理员不可编辑' })
+    }
+
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10)
       run(
@@ -1029,9 +1034,14 @@ adminRouter.delete('/users/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id as string
 
-    const existing = get<{ id: string; role: string }>('SELECT id, role FROM users WHERE id = ?', [id])
+    const existing = get<{ id: string; role: string; username: string }>('SELECT id, role, username FROM users WHERE id = ?', [id])
     if (!existing) {
       return res.status(404).json({ success: false, error: '用户不存在' })
+    }
+
+    // 主管理员不可删除
+    if (existing.username === 'admin') {
+      return res.status(400).json({ success: false, error: '主管理员不可删除' })
     }
 
     // 获取当前操作者身份

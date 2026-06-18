@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { api } from '@/api'
+import { api, ApiError } from '@/api'
 import { useAppStore } from '@/stores/app'
 import { useCartStore } from '@/stores/cart'
 import { useTableStore } from '@/stores/table'
@@ -23,6 +23,7 @@ const order = ref<Order | null>(null)
 const loading = ref(true)
 const showQRModal = ref(false)
 const cancelling = ref(false)
+const orderNotFound = ref(false)
 const qrCodeDataUrl = ref('')
 const barcodeDataUrl = ref('')
 
@@ -68,15 +69,26 @@ const statusColor = computed(() => {
   return colorMap[order.value.status] || 'var(--color-text-muted)'
 })
 
+const canAddMore = computed(() => {
+  if (!order.value) return false
+  return order.value.status === 'pending' || order.value.status === 'confirmed'
+})
+
 async function fetchOrder() {
   try {
     loading.value = true
     const id = route.params.id as string
     const res = await api.getOrder(id)
     order.value = res.data
+    orderNotFound.value = false
   } catch (error) {
     console.error('Failed to fetch order:', error)
-    appStore.showToast('获取订单信息失败', 'error')
+    if (error instanceof ApiError && error.status === 404) {
+      orderNotFound.value = true
+      order.value = null
+    } else {
+      appStore.showToast('获取订单信息失败', 'error')
+    }
   } finally {
     loading.value = false
   }
@@ -106,6 +118,12 @@ async function pollOrder() {
     }
   } catch (error) {
     console.error('Polling order error:', error)
+    if (error instanceof ApiError && error.status === 404) {
+      stopPolling()
+      orderNotFound.value = true
+      order.value = null
+      appStore.showToast('订单已被移除', 'info')
+    }
   }
 }
 
@@ -236,6 +254,19 @@ onUnmounted(() => {
         <div class="loading-spinner"></div>
       </div>
 
+      <template v-else-if="orderNotFound">
+        <div class="not-found-section">
+          <div class="not-found-icon">
+            <Store :size="48" />
+          </div>
+          <h2 class="not-found-title">订单不存在</h2>
+          <p class="not-found-desc">该订单已被移除或不存在</p>
+          <button class="btn btn-primary" @click="handleBack">
+            返回首页
+          </button>
+        </div>
+      </template>
+
       <template v-else-if="order">
         <!-- Status -->
         <div class="status-section">
@@ -308,7 +339,7 @@ onUnmounted(() => {
           >
             取消订单
           </button>
-          <button class="btn btn-primary" @click="handleAddMore">
+          <button v-if="canAddMore" class="btn btn-primary" @click="handleAddMore">
             加菜
           </button>
         </div>
@@ -608,5 +639,31 @@ onUnmounted(() => {
 .copy-hint {
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+
+.not-found-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-3xl) var(--spacing-xl);
+  text-align: center;
+  gap: var(--spacing-md);
+}
+
+.not-found-icon {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+.not-found-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.not-found-desc {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin-bottom: var(--spacing-md);
 }
 </style>

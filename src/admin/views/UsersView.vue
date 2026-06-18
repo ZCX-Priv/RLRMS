@@ -202,18 +202,20 @@ onMounted(() => {
         <div class="user-info">
           <div class="user-name-row">
             <h3 class="user-username">{{ user.name || user.username }}</h3>
-            <span class="role-badge" :class="user.role === 'admin' ? 'role-admin' : 'role-customer'">
+            <span v-if="user.username === 'admin'" class="role-badge role-primary-admin">
+              主管理员
+            </span>
+            <span v-else class="role-badge" :class="user.role === 'admin' ? 'role-admin' : 'role-customer'">
               {{ user.role === 'admin' ? '管理员' : '顾客' }}
             </span>
           </div>
           <div class="user-meta">
-            <span v-if="user.name" class="meta-item">{{ user.username }}</span>
             <span v-if="user.phone" class="meta-item">{{ user.phone }}</span>
             <span class="meta-item meta-date">{{ formatDate(user.created_at) }}</span>
           </div>
         </div>
 
-        <div class="user-actions">
+        <div v-if="user.username !== 'admin'" class="user-actions">
           <button class="action-btn" @click="openEditModal(user)">
             <Edit :size="16" />
           </button>
@@ -442,6 +444,11 @@ onMounted(() => {
   font-size: 0.75rem;
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.role-primary-admin {
+  background-color: #b91c1c;
+  color: white;
 }
 
 .role-admin {
