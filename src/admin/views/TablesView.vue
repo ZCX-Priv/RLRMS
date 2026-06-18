@@ -151,7 +151,7 @@ async function handleStatusChange(table: TableWithOrder, status: string) {
   
   try {
     await api.updateTableStatus(table.id, status)
-    appStore.showToast('状态已更新', 'success')
+    appStore.showToast('桌位状态已更新', 'success')
   } catch (error) {
     console.error('Failed to update status:', error)
     if (index !== -1) {

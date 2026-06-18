@@ -223,7 +223,7 @@ async function updateOrderStatus(order: Order, status: Order['status']) {
   
   try {
     await api.updateOrderStatus(order.id, status)
-    appStore.showToast('状态已更新', 'success')
+    appStore.showToast('订单状态已更新', 'success')
     fetchDashboard(false)
   } catch (error) {
     console.error('Failed to update status:', error)
