@@ -30,18 +30,12 @@ watch(() => props.show, (show) => {
 function handleClose() {
   emit('close')
 }
-
-function handleBackdropClick(e: MouseEvent) {
-  if (e.target === e.currentTarget && props.closable) {
-    handleClose()
-  }
-}
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="show" class="modal-backdrop" @click="handleBackdropClick">
+      <div v-if="show" class="modal-backdrop" @click.stop>
         <div class="modal" :class="`modal-${size}`">
           <div v-if="title || closable" class="modal-header">
             <h3 v-if="title" class="modal-title">{{ title }}</h3>

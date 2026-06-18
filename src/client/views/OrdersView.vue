@@ -41,6 +41,7 @@ async function fetchOrders() {
     initialized.value = true
   } catch (error) {
     console.error('Failed to fetch orders:', error)
+    orders.value = []
     appStore.showToast('获取订单列表失败', 'error')
   } finally {
     loading.value = false
@@ -81,6 +82,7 @@ async function pollOrders() {
     orders.value = res.data
   } catch (error) {
     console.error('Polling orders error:', error)
+    orders.value = []
   }
 }
 

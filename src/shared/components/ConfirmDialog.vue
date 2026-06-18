@@ -41,12 +41,6 @@ function handleCancel() {
   emit('update:show', false)
 }
 
-function handleBackdropClick(e: MouseEvent) {
-  if (e.target === e.currentTarget) {
-    handleCancel()
-  }
-}
-
 const typeClass = {
   danger: 'btn-danger',
   warning: 'btn-warning',
@@ -57,7 +51,7 @@ const typeClass = {
 <template>
   <Teleport to="body">
     <Transition name="confirm">
-      <div v-if="show" class="confirm-backdrop" @click="handleBackdropClick">
+      <div v-if="show" class="confirm-backdrop" @click.stop>
         <div class="confirm-dialog">
           <div class="confirm-icon" :class="`confirm-icon-${type}`">
             <AlertTriangle :size="24" />
