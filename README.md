@@ -87,6 +87,7 @@ red-lantern-restaurant/
 │       ├── utils/             # 工具函数
 │       │   ├── format.ts      # 日期时间格式化
 │       │   ├── jwt.ts         # JWT密钥与签发
+│       │   ├── memberNo.ts    # 会员号生成
 │       │   └── sse.ts         # SSE服务端推送
 │       ├── validators/        # 请求参数校验（Zod）
 │       │   └── index.ts
@@ -95,8 +96,11 @@ red-lantern-restaurant/
 │       └── index.ts           # Express应用创建与生产入口
 ├── src/                       # 前端源码
 │   ├── admin/                 # 管理端模块
+│   │   ├── components/        # 管理端组件
+│   │   │   └── DebugToolsPanel.vue  # 调试工具面板
 │   │   └── views/             # 管理端页面
 │   │       ├── DashboardView.vue    # 仪表盘
+│   │       ├── DebugView.vue        # 调试工具
 │   │       ├── DishesView.vue       # 菜单管理
 │   │       ├── InventoryView.vue    # 库存管理
 │   │       ├── LayoutView.vue       # 布局组件
@@ -152,11 +156,19 @@ red-lantern-restaurant/
 │   ├── App.vue                # 根组件
 │   ├── main.ts                # 入口文件
 │   └── style.css              # 全局样式
+├── .dockerignore             # Docker忽略文件
 ├── .env                       # 环境变量（PORT等）
+├── apache.conf               # Apache反向代理配置
+├── docker-compose.yml         # Docker Compose配置
+├── Dockerfile                 # Docker多阶段构建
 ├── ecosystem.config.cjs       # PM2进程管理配置
 ├── index.html                 # HTML入口
-├── nginx.conf                 # Nginx配置示例
+├── install.bat                # Windows安装脚本
+├── install.sh                 # Linux/macOS安装脚本
+├── nginx.conf                 # Nginx反向代理配置
 ├── package.json               # 项目配置
+├── start.bat / start.sh       # 启动脚本
+├── stop.bat / stop.sh         # 停止脚本
 ├── tsconfig.json              # TypeScript配置
 └── vite.config.ts             # Vite配置
 ```
@@ -249,6 +261,7 @@ npm run db:init
 | 库存管理 | 原材料库存监控、库存预警、入库/出库记录、拖拽排序 |
 | 用户管理 | 管理员/顾客账号管理、创建/编辑/删除用户、重置密码 |
 | 系统设置 | 店铺信息配置、数据导入导出、重置数据库、清空历史订单 |
+| 调试工具 | SQL 执行与查询、数据库 Schema 浏览、API 接口调试 |
 | 实时推送 | 通过 SSE 接收新订单、订单状态变更等实时事件 |
 
 ## API接口
@@ -493,6 +506,61 @@ PORT=3000
 ```
 
 > 注意：若修改后端端口，需同步更新 `vite.config.ts` 中 proxy 的 `target` 配置。
+
+## 部署
+
+### 一键安装
+
+项目提供跨平台安装脚本，自动完成依赖安装、生产构建、环境检测（PM2/Nginx/Apache/Docker）及配置引导：
+
+```bash
+# Windows
+install.bat
+
+# Linux / macOS
+chmod +x install.sh
+./install.sh
+```
+
+### Docker 部署
+
+使用多阶段构建，生成精简 Alpine 镜像，内置健康检查和非 root 用户运行：
+
+```bash
+# 构建并启动
+docker compose up -d --build
+
+# 查看日志
+docker compose logs -f
+
+# 停止服务
+docker compose down
+```
+
+数据持久化通过 Docker Volume 挂载 `server/data`（数据库）、`public/sources`（上传图片）、`logs`（日志）。
+
+### PM2 部署
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup   # 设置开机自启
+```
+
+### Nginx / Apache 反向代理
+
+项目根目录提供 `nginx.conf` 和 `apache.conf` 配置模板，安装脚本会自动检测并引导配置。主要注意事项：
+
+- 将 `server_name` 修改为实际域名或 IP
+- SSE 长连接需配置代理超时（已包含在模板中）
+- 配置完成后重载服务（`nginx -s reload` / `httpd -k restart`）
+
+### 快捷启停
+
+| 脚本 | 平台 | 说明 |
+|------|------|------|
+| `start.bat` / `start.sh` | Windows / Linux | 启动生产服务（自动检测 PM2） |
+| `stop.bat` / `stop.sh` | Windows / Linux | 停止生产服务 |
 
 ## 安全说明
 
