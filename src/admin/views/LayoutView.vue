@@ -115,14 +115,10 @@ function toggleDebugMenu() {
 }
 
 function handleDebugGroupClick(item: NavItem) {
-  if (sidebarCollapsed.value) {
-    const firstChild = item.children?.[0]
-    if (firstChild) {
-      handleNavigation(firstChild.path)
-      return
-    }
+  const firstChild = item.children?.[0]
+  if (firstChild) {
+    handleNavigation(firstChild.path)
   }
-  toggleDebugMenu()
 }
 
 // 监听路由变化，触发淡入动画
@@ -218,6 +214,7 @@ watch(
                 :size="16"
                 class="group-arrow"
                 :class="{ expanded: debugMenuExpanded }"
+                @click.stop="toggleDebugMenu()"
               />
             </button>
             <Transition name="expand">
@@ -232,7 +229,7 @@ watch(
                   :class="{ 'nav-item-active': isActive(child.path) }"
                   @click="handleNavigation(child.path)"
                 >
-                  <component :is="child.icon" :size="16" />
+                  <component :is="child.icon" :size="14" />
                   <span class="nav-label">{{ child.label }}</span>
                 </button>
               </div>
@@ -624,10 +621,10 @@ watch(
 }
 
 .nav-sub-item {
-  padding: var(--spacing-sm) var(--spacing-md);
-  padding-left: calc(var(--spacing-md) + 20px + var(--spacing-md));
+  padding: var(--spacing-xs) var(--spacing-md);
+  padding-left: calc(var(--spacing-md) + 20px + var(--spacing-md) + 2px);
   gap: var(--spacing-md);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--color-text-secondary);
   border-left: 2px solid transparent;
 }
