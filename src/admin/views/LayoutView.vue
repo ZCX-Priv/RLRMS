@@ -67,13 +67,11 @@ const navItems = computed<NavItem[]>(() => {
   return items
 })
 
-// 进入调试相关页面时自动展开折叠菜单
+// 根据当前路由自动展开/收起调试工具折叠菜单
 watch(
   () => route.path,
   (newPath) => {
-    if (newPath.startsWith('/admin/debug')) {
-      debugMenuExpanded.value = true
-    }
+    debugMenuExpanded.value = newPath.startsWith('/admin/debug')
   },
   { immediate: true }
 )
@@ -229,7 +227,7 @@ watch(
                   :class="{ 'nav-item-active': isActive(child.path) }"
                   @click="handleNavigation(child.path)"
                 >
-                  <component :is="child.icon" :size="14" />
+                  <component :is="child.icon" :size="16" />
                   <span class="nav-label">{{ child.label }}</span>
                 </button>
               </div>
@@ -621,12 +619,12 @@ watch(
 }
 
 .nav-sub-item {
-  padding: var(--spacing-xs) var(--spacing-md);
-  padding-left: calc(var(--spacing-md) + 20px + var(--spacing-md) + 2px);
+  position: relative;
+  padding: var(--spacing-sm) var(--spacing-md);
+  padding-left: calc(var(--spacing-md) + 20px + var(--spacing-md) + 10px);
   gap: var(--spacing-md);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   color: var(--color-text-secondary);
-  border-left: 2px solid transparent;
 }
 
 .nav-sub-item:hover {
@@ -637,7 +635,18 @@ watch(
 .nav-sub-item.nav-item-active {
   background-color: transparent;
   color: var(--color-primary);
-  border-left-color: var(--color-primary);
+}
+
+.nav-sub-item.nav-item-active::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--spacing-md) + 20px + var(--spacing-md));
+  top: 50%;
+  transform: translateY(-50%);
+  height: 16px;
+  width: 3px;
+  border-radius: 9999px;
+  background-color: var(--color-primary);
 }
 
 .nav-sub-item.nav-item-active:hover {
