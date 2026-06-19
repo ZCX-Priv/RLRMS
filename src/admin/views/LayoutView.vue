@@ -8,14 +8,14 @@ import { getItem } from '@/utils/storage'
 import {
   Home,
   UtensilsCrossed,
-  ClipboardList,
+  Armchair,
   Settings,
   LogOut,
   Menu,
   X,
-  Archive,
-  Users,
-  Wrench
+  Package,
+  UserCircle,
+  Code
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -39,14 +39,14 @@ const fadingItems = ref<Set<string>>(new Set())
 const navItems = computed(() => {
   const items = [
     { icon: Home, label: '首页', path: '/admin' },
-    { icon: ClipboardList, label: '桌位管理', path: '/admin/tables' },
+    { icon: Armchair, label: '桌位管理', path: '/admin/tables' },
     { icon: UtensilsCrossed, label: '菜单管理', path: '/admin/dishes' },
-    { icon: Archive, label: '库存管理', path: '/admin/inventory' },
-    { icon: Users, label: '用户管理', path: '/admin/users' },
+    { icon: Package, label: '库存管理', path: '/admin/inventory' },
+    { icon: UserCircle, label: '用户管理', path: '/admin/users' },
     { icon: Settings, label: '系统设置', path: '/admin/settings' },
   ]
   if (devMode.value) {
-    items.push({ icon: Wrench, label: '调试工具', path: '/admin/debug' })
+    items.push({ icon: Code, label: '调试工具', path: '/admin/debug' })
   }
   return items
 })

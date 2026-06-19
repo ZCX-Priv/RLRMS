@@ -8,7 +8,7 @@ import Skeleton from '@/shared/components/Skeleton.vue'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { ShoppingBag, DollarSign, Clock, CheckCircle, Eye, XCircle, Trash2, Box, Bell, BellOff, Search } from 'lucide-vue-next'
+import { ShoppingBag, DollarSign, Clock, CheckCircle, Eye, XCircle, Trash2, Box, Bell, BellOff, Search, ClipboardList } from 'lucide-vue-next'
 
 const appStore = useAppStore()
 
@@ -603,7 +603,7 @@ onUnmounted(() => {
 
         <div v-else-if="ordersInitialized && orders.length === 0" class="empty-state">
           <div class="empty-icon">
-            <Box :size="48" />
+            <ClipboardList :size="48" />
           </div>
           <h3 class="empty-title">暂无订单</h3>
           <p class="empty-description">当前筛选条件下没有订单记录</p>
@@ -972,7 +972,7 @@ onUnmounted(() => {
   width: 100px;
   height: 100px;
   border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, var(--color-primary-light, rgba(220, 38, 38, 0.1)) 0%, var(--color-bg-tertiary) 100%);
+  border: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: center;

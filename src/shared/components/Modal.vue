@@ -79,17 +79,17 @@ function handleClose() {
 
 .modal-sm {
   width: 100%;
-  max-width: 320px;
+  max-width: 480px;
 }
 
 .modal-md {
   width: 100%;
-  max-width: 480px;
+  max-width: 640px;
 }
 
 .modal-lg {
   width: 100%;
-  max-width: 640px;
+  max-width: 800px;
 }
 
 .modal-header {

@@ -341,7 +341,7 @@ onMounted(() => {
   width: 100px;
   height: 100px;
   border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, var(--color-primary-light, rgba(220, 38, 38, 0.1)) 0%, var(--color-bg-tertiary) 100%);
+  border: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: center;
