@@ -148,6 +148,12 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { title: '系统设置' }
       },
       {
+        path: 'debug',
+        name: 'AdminDebug',
+        component: () => import('@/admin/views/DebugView.vue'),
+        meta: { title: '调试工具' }
+      },
+      {
         path: ':pathMatch(.*)*',
         name: 'AdminNotFound',
         component: () => import('@/admin/views/NotFoundView.vue'),

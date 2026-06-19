@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { getItem } from '@/utils/storage'
 import {
   Home,
   UtensilsCrossed,
@@ -13,7 +14,8 @@ import {
   Menu,
   X,
   Archive,
-  Users
+  Users,
+  Wrench
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -23,22 +25,31 @@ const appStore = useAppStore()
 
 const sidebarCollapsed = ref(false)
 const mobileSidebarOpen = ref(false)
+const devMode = ref(false)
 
 onMounted(async () => {
   await appStore.loadTheme(true)
+  const saved = await getItem<boolean>('devMode')
+  if (saved) devMode.value = true
 })
 
 // 追踪导航项切换动画
 const fadingItems = ref<Set<string>>(new Set())
 
-const navItems = [
-  { icon: Home, label: '首页', path: '/admin' },
-  { icon: ClipboardList, label: '桌位管理', path: '/admin/tables' },
-  { icon: UtensilsCrossed, label: '菜单管理', path: '/admin/dishes' },
-  { icon: Archive, label: '库存管理', path: '/admin/inventory' },
-  { icon: Users, label: '用户管理', path: '/admin/users' },
-  { icon: Settings, label: '系统设置', path: '/admin/settings' },
-]
+const navItems = computed(() => {
+  const items = [
+    { icon: Home, label: '首页', path: '/admin' },
+    { icon: ClipboardList, label: '桌位管理', path: '/admin/tables' },
+    { icon: UtensilsCrossed, label: '菜单管理', path: '/admin/dishes' },
+    { icon: Archive, label: '库存管理', path: '/admin/inventory' },
+    { icon: Users, label: '用户管理', path: '/admin/users' },
+    { icon: Settings, label: '系统设置', path: '/admin/settings' },
+  ]
+  if (devMode.value) {
+    items.push({ icon: Wrench, label: '调试工具', path: '/admin/debug' })
+  }
+  return items
+})
 
 const currentPath = computed(() => route.path)
 

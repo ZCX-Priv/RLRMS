@@ -6,8 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { getItem, setItem } from '@/utils/storage'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
-const DebugToolsPanel = defineAsyncComponent(() => import('@/admin/components/DebugToolsPanel.vue'))
-import { Sun, Moon, Monitor, Lock, Info, LogOut, Store, Save, RotateCcw, AlertTriangle, Download, Upload, Database, Code, Wrench, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Sun, Moon, Monitor, Lock, Info, LogOut, Store, Save, RotateCcw, AlertTriangle, Download, Upload, Database, Code } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
@@ -42,8 +41,6 @@ const savingSettings = ref(false)
 
 // 开发人员选项
 const devMode = ref(false)
-const debugExpanded = ref(false)
-const devModeLoading = ref(false)
 
 onMounted(async () => {
   await appStore.loadTheme(true)
@@ -56,9 +53,6 @@ onMounted(async () => {
 // 监听开发者模式变化并持久化到 IndexedDB
 watch(devMode, async (val) => {
   await setItem('devMode', val)
-  if (!val) {
-    debugExpanded.value = false
-  }
 })
 
 async function fetchSettings() {
@@ -363,28 +357,6 @@ async function handleImport() {
         </label>
       </div>
     </div>
-
-    <!-- 调试工具（仅在开发人员模式开启时显示） -->
-    <Transition name="collapse">
-      <div v-if="devMode" class="settings-section debug-section">
-        <div
-          class="setting-item clickable"
-          @click="debugExpanded = !debugExpanded"
-        >
-          <div class="setting-info">
-            <Wrench :size="20" />
-            <span>调试工具</span>
-          </div>
-          <ChevronDown v-if="debugExpanded" :size="18" class="collapse-arrow" />
-          <ChevronRight v-else :size="18" class="collapse-arrow" />
-        </div>
-        <Transition name="slide-down">
-          <div v-if="debugExpanded" class="debug-content">
-            <DebugToolsPanel />
-          </div>
-        </Transition>
-      </div>
-    </Transition>
 
     <div class="logout-section">
       <button class="btn btn-danger reset-btn" @click="showResetModal = true">
@@ -900,56 +872,5 @@ async function handleImport() {
 
 .toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(20px);
-}
-
-/* Debug Section */
-.debug-section {
-  overflow: hidden;
-}
-
-.collapse-arrow {
-  color: var(--color-text-muted);
-  transition: transform 0.2s;
-}
-
-.debug-content {
-  padding: 0 var(--spacing-md) var(--spacing-md);
-}
-
-/* Transitions */
-.collapse-enter-active,
-.collapse-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.collapse-enter-from,
-.collapse-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
-.collapse-enter-to,
-.collapse-leave-from {
-  opacity: 1;
-  max-height: 1200px;
-}
-
-.slide-down-enter-active,
-.slide-down-leave-active {
-  transition: all 0.25s ease;
-  overflow: hidden;
-}
-
-.slide-down-enter-from,
-.slide-down-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
-.slide-down-enter-to,
-.slide-down-leave-from {
-  opacity: 1;
-  max-height: 1000px;
 }
 </style>

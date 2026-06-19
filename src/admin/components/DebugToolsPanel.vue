@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, type Component } from 'vue'
 import { api } from '@/api'
-import { Terminal, Table2, Play, Send, Trash2, Hash, ChevronRight, Copy, AlertCircle, CheckCircle2, Database, RefreshCw } from 'lucide-vue-next'
+import {
+  Terminal, Table2, Play, Send, Trash2, Hash, ChevronRight, Copy, AlertCircle, CheckCircle2,
+  Database, RefreshCw, LayoutDashboard, Armchair, UtensilsCrossed, FolderOpen,
+  ClipboardList, Package, UserCircle, Settings
+} from 'lucide-vue-next'
 
 // ===== Tab 切换 =====
 const activeTab = ref<'sql' | 'api'>('sql')
@@ -33,21 +37,21 @@ interface ApiEndpoint {
 
 interface ApiGroup {
   name: string
-  icon: string
+  icon: Component
   endpoints: ApiEndpoint[]
 }
 
 const apiGroups: ApiGroup[] = [
   {
     name: '仪表板',
-    icon: '📊',
+    icon: LayoutDashboard,
     endpoints: [
       { method: 'GET', path: '/admin/dashboard', description: '获取仪表板统计数据' }
     ]
   },
   {
     name: '桌位管理',
-    icon: '🪑',
+    icon: Armchair,
     endpoints: [
       { method: 'GET', path: '/admin/tables', description: '获取所有桌位列表' },
       { method: 'POST', path: '/admin/tables', description: '创建新桌位', defaultBody: '{\n  "table_no": "A1",\n  "name": "大厅1号桌",\n  "capacity": 4\n}' },
@@ -57,7 +61,7 @@ const apiGroups: ApiGroup[] = [
   },
   {
     name: '菜品管理',
-    icon: '🍜',
+    icon: UtensilsCrossed,
     endpoints: [
       { method: 'GET', path: '/admin/dishes', description: '获取所有菜品列表' },
       { method: 'POST', path: '/admin/dishes', description: '创建新菜品', defaultBody: '{\n  "name": "新菜品",\n  "price": 28.0,\n  "category_id": "",\n  "description": "菜品描述",\n  "tags": ["推荐"],\n  "specs": []\n}' },
@@ -67,7 +71,7 @@ const apiGroups: ApiGroup[] = [
   },
   {
     name: '分类管理',
-    icon: '📁',
+    icon: FolderOpen,
     endpoints: [
       { method: 'GET', path: '/admin/categories', description: '获取所有分类列表' },
       { method: 'POST', path: '/admin/categories', description: '创建新分类', defaultBody: '{\n  "name": "新分类",\n  "sort_order": 0\n}' },
@@ -76,7 +80,7 @@ const apiGroups: ApiGroup[] = [
   },
   {
     name: '订单管理',
-    icon: '📋',
+    icon: ClipboardList,
     endpoints: [
       { method: 'GET', path: '/admin/orders', description: '获取所有订单列表', params: [{ name: 'status', type: 'query' }, { name: 'startDate', type: 'query' }, { name: 'endDate', type: 'query' }] },
       { method: 'GET', path: '/admin/orders/search', description: '按订单号搜索订单', params: [{ name: 'order_no', type: 'query' }] },
@@ -87,7 +91,7 @@ const apiGroups: ApiGroup[] = [
   },
   {
     name: '库存管理',
-    icon: '📦',
+    icon: Package,
     endpoints: [
       { method: 'GET', path: '/admin/inventory', description: '获取库存列表' },
       { method: 'POST', path: '/admin/inventory', description: '创建库存项', defaultBody: '{\n  "material_name": "物料名",\n  "quantity": 100,\n  "unit": "kg",\n  "warning_threshold": 10\n}' },
@@ -97,7 +101,7 @@ const apiGroups: ApiGroup[] = [
   },
   {
     name: '用户管理',
-    icon: '👤',
+    icon: UserCircle,
     endpoints: [
       { method: 'GET', path: '/admin/users', description: '获取用户列表' },
       { method: 'POST', path: '/admin/users', description: '创建新用户', defaultBody: '{\n  "username": "newuser",\n  "password": "123456",\n  "role": "customer",\n  "name": "新用户",\n  "phone": "13800138000"\n}' },
@@ -107,7 +111,7 @@ const apiGroups: ApiGroup[] = [
   },
   {
     name: '系统设置',
-    icon: '⚙️',
+    icon: Settings,
     endpoints: [
       { method: 'GET', path: '/admin/settings', description: '获取系统设置' },
       { method: 'PUT', path: '/admin/settings', description: '更新系统设置', defaultBody: '{\n  "restaurant_name": "红灯笼食府",\n  "business_hours": "11:00-21:00"\n}' },
@@ -524,7 +528,7 @@ loadSchema()
       <div class="api-groups">
         <div v-for="group in apiGroups" :key="group.name" class="api-group">
           <div class="group-header">
-            <span class="group-icon">{{ group.icon }}</span>
+            <component :is="group.icon" :size="16" class="group-icon" />
             <span class="group-name">{{ group.name }}</span>
             <span class="group-count">{{ group.endpoints.length }}</span>
           </div>
@@ -1030,7 +1034,8 @@ loadSchema()
 }
 
 .group-icon {
-  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
 }
 
 .group-name {
