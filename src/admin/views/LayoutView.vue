@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, type Component } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -14,7 +14,10 @@ import {
   X,
   Package,
   UserCircle,
-  Code
+  Code,
+  Terminal,
+  Send,
+  ChevronRight
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -24,6 +27,7 @@ const appStore = useAppStore()
 
 const sidebarCollapsed = ref(false)
 const mobileSidebarOpen = ref(false)
+const debugMenuExpanded = ref(false)
 
 onMounted(async () => {
   await appStore.loadTheme(true)
@@ -33,8 +37,15 @@ onMounted(async () => {
 // 追踪导航项切换动画
 const fadingItems = ref<Set<string>>(new Set())
 
-const navItems = computed(() => {
-  const items = [
+interface NavItem {
+  icon: Component
+  label: string
+  path: string
+  children?: { icon: Component; label: string; path: string }[]
+}
+
+const navItems = computed<NavItem[]>(() => {
+  const items: NavItem[] = [
     { icon: Home, label: '首页', path: '/admin' },
     { icon: Armchair, label: '桌位管理', path: '/admin/tables' },
     { icon: UtensilsCrossed, label: '菜单管理', path: '/admin/dishes' },
@@ -43,10 +54,29 @@ const navItems = computed(() => {
     { icon: Settings, label: '系统设置', path: '/admin/settings' },
   ]
   if (appStore.devMode) {
-    items.push({ icon: Code, label: '调试工具', path: '/admin/debug' })
+    items.push({
+      icon: Code,
+      label: '调试工具',
+      path: '/admin/debug',
+      children: [
+        { icon: Terminal, label: 'SQL 查询', path: '/admin/debug/sql' },
+        { icon: Send, label: 'API 调试', path: '/admin/debug/api' }
+      ]
+    })
   }
   return items
 })
+
+// 进入调试相关页面时自动展开折叠菜单
+watch(
+  () => route.path,
+  (newPath) => {
+    if (newPath.startsWith('/admin/debug')) {
+      debugMenuExpanded.value = true
+    }
+  },
+  { immediate: true }
+)
 
 const currentPath = computed(() => route.path)
 
@@ -78,6 +108,21 @@ function toggleSidebar() {
 
 function toggleMobileSidebar() {
   mobileSidebarOpen.value = !mobileSidebarOpen.value
+}
+
+function toggleDebugMenu() {
+  debugMenuExpanded.value = !debugMenuExpanded.value
+}
+
+function handleDebugGroupClick(item: NavItem) {
+  if (sidebarCollapsed.value) {
+    const firstChild = item.children?.[0]
+    if (firstChild) {
+      handleNavigation(firstChild.path)
+      return
+    }
+  }
+  toggleDebugMenu()
 }
 
 // 监听路由变化，触发淡入动画
@@ -123,26 +168,77 @@ watch(
       </div>
 
       <nav class="sidebar-nav">
-        <button
-          v-for="item in navItems"
-          :key="item.path"
-          class="nav-item"
-          :class="{ 'nav-item-active': isActive(item.path) }"
-          @click="handleNavigation(item.path)"
-        >
-          <Transition name="nav-fade" mode="out-in">
-            <div
-              :key="isActive(item.path) ? 'active' : 'inactive'"
-              class="nav-icon-wrapper"
-              :class="{ 'is-fading': fadingItems.has(item.path) }"
+        <template v-for="item in navItems" :key="item.path">
+          <!-- 普通导航项 -->
+          <button
+            v-if="!item.children"
+            class="nav-item"
+            :class="{ 'nav-item-active': isActive(item.path) }"
+            @click="handleNavigation(item.path)"
+          >
+            <Transition name="nav-fade" mode="out-in">
+              <div
+                :key="isActive(item.path) ? 'active' : 'inactive'"
+                class="nav-icon-wrapper"
+                :class="{ 'is-fading': fadingItems.has(item.path) }"
+              >
+                <component :is="item.icon" :size="20" />
+              </div>
+            </Transition>
+            <Transition name="label-fade">
+              <span v-if="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
+            </Transition>
+          </button>
+
+          <!-- 调试工具折叠菜单 -->
+          <div
+            v-else
+            class="nav-group"
+            :class="{ 'nav-group-active': isActive(item.path) }"
+          >
+            <button
+              class="nav-item nav-group-toggle"
+              :class="{ 'nav-item-active': isActive(item.path) }"
+              @click="handleDebugGroupClick(item)"
             >
-              <component :is="item.icon" :size="20" />
-            </div>
-          </Transition>
-          <Transition name="label-fade">
-            <span v-if="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
-          </Transition>
-        </button>
+              <Transition name="nav-fade" mode="out-in">
+                <div
+                  :key="isActive(item.path) ? 'active' : 'inactive'"
+                  class="nav-icon-wrapper"
+                  :class="{ 'is-fading': fadingItems.has(item.path) }"
+                >
+                  <component :is="item.icon" :size="20" />
+                </div>
+              </Transition>
+              <Transition name="label-fade">
+                <span v-if="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
+              </Transition>
+              <ChevronRight
+                v-if="!sidebarCollapsed"
+                :size="16"
+                class="group-arrow"
+                :class="{ expanded: debugMenuExpanded }"
+              />
+            </button>
+            <Transition name="expand">
+              <div
+                v-show="!sidebarCollapsed && debugMenuExpanded"
+                class="nav-sub-items"
+              >
+                <button
+                  v-for="child in item.children"
+                  :key="child.path"
+                  class="nav-item nav-sub-item"
+                  :class="{ 'nav-item-active': isActive(child.path) }"
+                  @click="handleNavigation(child.path)"
+                >
+                  <component :is="child.icon" :size="16" />
+                  <span class="nav-label">{{ child.label }}</span>
+                </button>
+              </div>
+            </Transition>
+          </div>
+        </template>
       </nav>
 
       <div class="sidebar-footer">
@@ -496,6 +592,66 @@ watch(
 
 .nav-item-active:hover .nav-icon-wrapper {
   color: white;
+}
+
+/* 折叠菜单组 */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-group-toggle {
+  justify-content: space-between;
+}
+
+.nav-group-toggle .nav-label {
+  flex: 1;
+}
+
+.group-arrow {
+  color: var(--color-text-muted);
+  transition: transform var(--duration-normal) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.group-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.nav-sub-items {
+  display: grid;
+  overflow: hidden;
+}
+
+.nav-sub-item {
+  padding: var(--spacing-sm) var(--spacing-md);
+  padding-left: calc(var(--spacing-md) + 20px + var(--spacing-md));
+  gap: var(--spacing-md);
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.nav-sub-item:hover {
+  color: var(--color-text-primary);
+}
+
+/* 子菜单展开/收起动画 */
+.expand-enter-active,
+.expand-leave-active {
+  transition: grid-template-rows var(--duration-normal) var(--ease-out),
+              opacity var(--duration-normal) var(--ease-out);
+}
+
+.expand-enter-from,
+.expand-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.expand-enter-to,
+.expand-leave-from {
+  grid-template-rows: 1fr;
+  opacity: 1;
 }
 
 .sidebar-footer {

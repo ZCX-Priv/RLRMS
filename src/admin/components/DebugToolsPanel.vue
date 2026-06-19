@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, type Component } from 'vue'
+import { ref, computed, type Component } from 'vue'
+import { useRoute } from 'vue-router'
 import { api } from '@/api'
 import {
-  Terminal, Table2, Play, Send, Trash2, Hash, ChevronRight, Copy, AlertCircle, CheckCircle2,
+  Table2, Play, Send, Trash2, Hash, ChevronRight, Copy, AlertCircle, CheckCircle2,
   Database, RefreshCw, LayoutDashboard, Armchair, UtensilsCrossed, FolderOpen,
   ClipboardList, Package, UserCircle, Settings
 } from 'lucide-vue-next'
 
-// ===== Tab 切换 =====
-const activeTab = ref<'sql' | 'api'>('sql')
+// ===== Tab 切换（由路由驱动） =====
+const route = useRoute()
+const activeTab = computed<'sql' | 'api'>(() => {
+  return route.path === '/admin/debug/api' ? 'api' : 'sql'
+})
 
 // ===== SQL Tab 状态 =====
 const sqlInput = ref('SELECT * FROM sqlite_master WHERE type="table"')
@@ -351,26 +355,6 @@ loadSchema()
 
 <template>
   <div class="debug-panel">
-    <!-- Tab 切换 -->
-    <div class="debug-tabs">
-      <button
-        class="debug-tab"
-        :class="{ active: activeTab === 'sql' }"
-        @click="activeTab = 'sql'"
-      >
-        <Terminal :size="14" />
-        SQL 查询
-      </button>
-      <button
-        class="debug-tab"
-        :class="{ active: activeTab === 'api' }"
-        @click="activeTab = 'api'"
-      >
-        <Send :size="14" />
-        API 调试
-      </button>
-    </div>
-
     <!-- SQL Tab -->
     <div v-if="activeTab === 'sql'" class="tab-content">
       <div class="sql-layout">
@@ -648,40 +632,6 @@ loadSchema()
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-}
-
-/* Tabs */
-.debug-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg-secondary);
-}
-
-.debug-tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 16px;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.debug-tab:hover {
-  color: var(--color-text-primary);
-  background: var(--color-bg-tertiary);
-}
-
-.debug-tab.active {
-  color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
 }
 
 .tab-content {

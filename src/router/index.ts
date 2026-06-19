@@ -154,6 +154,18 @@ const adminRoutes: RouteRecordRaw[] = [
         meta: { title: '调试工具' }
       },
       {
+        path: 'debug/sql',
+        name: 'AdminDebugSQL',
+        component: () => import('@/admin/views/DebugView.vue'),
+        meta: { title: 'SQL 查询' }
+      },
+      {
+        path: 'debug/api',
+        name: 'AdminDebugAPI',
+        component: () => import('@/admin/views/DebugView.vue'),
+        meta: { title: 'API 调试' }
+      },
+      {
         path: ':pathMatch(.*)*',
         name: 'AdminNotFound',
         component: () => import('@/admin/views/NotFoundView.vue'),
