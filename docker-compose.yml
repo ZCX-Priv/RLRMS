@@ -1,0 +1,53 @@
+# 红灯笼食府管理系统 - Docker Compose 配置
+# 启动命令：docker compose up -d
+# 查看日志：docker compose logs -f
+# 停止服务：docker compose down
+
+services:
+  red-lantern:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: red-lantern-restaurant
+    restart: always  # 保活：容器退出后自动重启
+
+    ports:
+      - "3000:3000"
+
+    env_file:
+      - .env
+
+    environment:
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
+
+    volumes:
+      # 数据库文件持久化（容器重启后数据不丢失）
+      - ./server/data:/app/server/data
+      # 日志持久化
+      - ./logs:/app/logs
+      # 图片上传目录持久化（运行时上传的图片）
+      - ./public/sources:/app/public/sources
+
+    # 健康检查（双保险，Dockerfile 中已有）
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    # 资源限制（防止内存泄漏导致系统崩溃）
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+    # 日志配置（限制日志大小，防止磁盘填满）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
