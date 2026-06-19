@@ -353,6 +353,80 @@ function getStatusColor(status: number): string {
 loadSchema()
 </script>
 
+<script lang="ts">
+import { defineComponent, h, ref as defineRef, watch, type PropType } from 'vue'
+
+const MIN_COL_WIDTH = 60
+const DEFAULT_COL_WIDTH = 120
+
+const ResizableResultTable = defineComponent({
+  name: 'ResizableResultTable',
+  props: {
+    columns: { type: Array as PropType<string[]>, required: true },
+    rows: { type: Array as PropType<Record<string, unknown>[]>, required: true }
+  },
+  setup(props) {
+    const columnWidths = defineRef<number[]>([])
+
+    watch(() => props.columns, (cols) => {
+      columnWidths.value = cols.map(() => DEFAULT_COL_WIDTH)
+    }, { immediate: true })
+
+    let resizingIndex = -1
+    let startX = 0
+    let startWidth = 0
+
+    function startResize(e: MouseEvent, index: number) {
+      resizingIndex = index
+      startX = e.clientX
+      startWidth = columnWidths.value[index] ?? DEFAULT_COL_WIDTH
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+    }
+
+    function handleMouseMove(e: MouseEvent) {
+      if (resizingIndex === -1) return
+      const delta = e.clientX - startX
+      columnWidths.value[resizingIndex] = Math.max(MIN_COL_WIDTH, startWidth + delta)
+    }
+
+    function handleMouseUp() {
+      resizingIndex = -1
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    return () => h('div', { class: 'result-table-wrap' }, [
+      h('table', { class: 'result-table' }, [
+        h('colgroup', {}, props.columns.map((_, i) =>
+          h('col', { key: i, style: { width: columnWidths.value[i] + 'px' } })
+        )),
+        h('thead', {}, [
+          h('tr', {}, props.columns.map((col, i) =>
+            h('th', { key: col, style: { width: columnWidths.value[i] + 'px' } }, [
+              h('span', { class: 'th-text' }, col),
+              h('div', {
+                class: 'col-resize-handle',
+                onMousedown: (e: MouseEvent) => startResize(e, i)
+              })
+            ])
+          ))
+        ]),
+        h('tbody', {}, props.rows.map((row, rowIndex) =>
+          h('tr', { key: rowIndex }, props.columns.map(col =>
+            h('td', { key: col }, String(row[col] ?? ''))
+          ))
+        ))
+      ])
+    ])
+  }
+})
+</script>
+
 <template>
   <div class="debug-panel">
     <!-- SQL Tab -->
@@ -450,22 +524,11 @@ loadSchema()
             </div>
 
             <!-- 结果表格 -->
-            <div v-if="sqlResult.columns.length > 0" class="result-table-wrap">
-              <table class="result-table">
-                <thead>
-                  <tr>
-                    <th v-for="col in sqlResult.columns" :key="col">{{ col }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(row, i) in sqlResult.rows" :key="i">
-                    <td v-for="col in sqlResult.columns" :key="col">
-                      {{ row[col] ?? '' }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <ResizableResultTable
+              v-if="sqlResult.columns.length > 0"
+              :columns="sqlResult.columns"
+              :rows="sqlResult.rows"
+            />
           </div>
 
           <!-- 表数据浏览 -->
@@ -486,22 +549,7 @@ loadSchema()
                 >›</button>
               </div>
             </div>
-            <div class="result-table-wrap">
-              <table class="result-table">
-                <thead>
-                  <tr>
-                    <th v-for="col in tableDataColumns" :key="col">{{ col }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(row, i) in tableData" :key="i">
-                    <td v-for="col in tableDataColumns" :key="col">
-                      {{ row[col] ?? '' }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <ResizableResultTable :columns="tableDataColumns" :rows="tableData" />
           </div>
         </div>
       </div>
@@ -644,6 +692,7 @@ loadSchema()
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* SQL Layout */
@@ -870,22 +919,27 @@ loadSchema()
   color: #22c55e;
 }
 
-.result-table-wrap {
+:deep(.result-table-wrap) {
   overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   max-height: 240px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
-.result-table {
-  width: 100%;
+:deep(.result-table) {
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.75rem;
   font-family: 'Cascadia Code', 'Fira Code', monospace;
   table-layout: fixed;
 }
 
-.result-table th {
+:deep(.result-table th) {
+  position: relative;
   background: var(--color-bg-secondary);
   padding: 6px 10px;
   text-align: left;
@@ -893,23 +947,56 @@ loadSchema()
   color: var(--color-text-muted);
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
-.result-table td {
+:deep(.result-table th .th-text) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:deep(.result-table td) {
   padding: 4px 10px;
   border-bottom: 1px solid var(--color-border-light);
   white-space: nowrap;
-  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
-.result-table tr:last-child td {
+:deep(.result-table tr:last-child td) {
   border-bottom: none;
 }
 
-.result-table tr:hover td {
+:deep(.result-table tr:hover td) {
   background: var(--color-bg-tertiary);
+}
+
+:deep(.col-resize-handle) {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    var(--color-border) 2px,
+    var(--color-border) 3px,
+    transparent 3px
+  );
+  transition: background 0.15s;
+}
+
+:deep(.col-resize-handle:hover),
+:deep(.col-resize-handle:active) {
+  background: var(--color-primary);
 }
 
 /* Table data preview */
