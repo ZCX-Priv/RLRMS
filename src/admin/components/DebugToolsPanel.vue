@@ -903,7 +903,9 @@ const ResizableResultTable = defineComponent({
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .result-header {
@@ -926,7 +928,9 @@ const ResizableResultTable = defineComponent({
   max-height: 240px;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
+  flex: 1;
 }
 
 :deep(.result-table) {
@@ -946,6 +950,7 @@ const ResizableResultTable = defineComponent({
   font-weight: 600;
   color: var(--color-text-muted);
   border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border-light);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -962,6 +967,7 @@ const ResizableResultTable = defineComponent({
 :deep(.result-table td) {
   padding: 4px 10px;
   border-bottom: 1px solid var(--color-border-light);
+  border-right: 1px solid var(--color-border-light);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -970,6 +976,11 @@ const ResizableResultTable = defineComponent({
 
 :deep(.result-table tr:last-child td) {
   border-bottom: none;
+}
+
+:deep(.result-table th:last-child),
+:deep(.result-table td:last-child) {
+  border-right: none;
 }
 
 :deep(.result-table tr:hover td) {
@@ -984,13 +995,7 @@ const ResizableResultTable = defineComponent({
   height: 100%;
   cursor: col-resize;
   z-index: 2;
-  background: linear-gradient(
-    to right,
-    transparent 2px,
-    var(--color-border) 2px,
-    var(--color-border) 3px,
-    transparent 3px
-  );
+  background: transparent;
   transition: background 0.15s;
 }
 
@@ -1008,7 +1013,9 @@ const ResizableResultTable = defineComponent({
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .table-data-header {
