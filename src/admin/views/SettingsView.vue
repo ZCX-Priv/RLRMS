@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { getItem, setItem } from '@/utils/storage'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
-import { Sun, Moon, Monitor, Lock, Info, LogOut, Store, Save, RotateCcw, AlertTriangle, Download, Upload, Database, Code } from 'lucide-vue-next'
+import { Sun, Moon, Monitor, Lock, Info, LogOut, Save, RotateCcw, AlertTriangle, Download, Upload, Code } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
@@ -213,7 +213,6 @@ async function handleImport() {
 
     <div class="settings-section">
       <h2 class="section-title">
-        <Store :size="18" />
         餐厅信息
       </h2>
       <div class="settings-form">
@@ -324,7 +323,6 @@ async function handleImport() {
 
     <div class="settings-section">
       <h2 class="section-title">
-        <Database :size="18" />
         数据管理
       </h2>
       <div class="data-management">
@@ -343,13 +341,12 @@ async function handleImport() {
     <!-- 开发人员选项 -->
     <div class="settings-section">
       <h2 class="section-title">
-        <Code :size="18" />
         开发人员选项
       </h2>
       <div class="setting-item">
         <div class="setting-info">
           <Code :size="20" />
-          <span>开发人员模式</span>
+          <span>调试工具</span>
         </div>
         <label class="toggle-switch">
           <input type="checkbox" v-model="devMode" />

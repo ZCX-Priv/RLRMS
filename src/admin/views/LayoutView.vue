@@ -497,6 +497,10 @@ watch(
   color: white;
 }
 
+.nav-item-active:hover .nav-icon-wrapper {
+  color: white;
+}
+
 .sidebar-footer {
   padding: var(--spacing-md);
   border-top: 1px solid var(--color-border-light);
