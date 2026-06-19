@@ -19,6 +19,7 @@ const pageTitle = computed(() => (route.meta.title as string) || '调试工具')
 <style scoped>
 .debug-page {
   max-width: 1200px;
+  overflow: hidden;
 }
 
 .page-title {

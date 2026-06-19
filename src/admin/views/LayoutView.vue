@@ -743,6 +743,7 @@ watch(
 /* Main Content */
 .main-content {
   flex: 1;
+  min-width: 0;
   padding: var(--spacing-lg);
   margin-top: 60px;
 }
