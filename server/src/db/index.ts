@@ -16,7 +16,7 @@ if (!existsSync(dataDir)) {
 }
 
 // Save database to file
-function saveDatabase() {
+export function saveDatabase() {
   if (db && !deferSave) {
     const data = db.export()
     const buffer = Buffer.from(data)

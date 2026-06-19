@@ -541,4 +541,16 @@ export const api = {
       }
     }
   },
+
+  // Debug Tools
+  async debugQuery(sql: string) {
+    return request<{ success: boolean; data: { columns: string[]; rows: Record<string, unknown>[]; changes: number } }>('/admin/debug/query', {
+      method: 'POST',
+      body: JSON.stringify({ sql }),
+    })
+  },
+
+  async getSchema() {
+    return request<{ success: boolean; data: { tables: { name: string; sql: string; columns: { cid: number; name: string; type: string; notnull: number; dflt_value: string | null; pk: number }[]; foreignKeys: { id: number; seq: number; table: string; from: string; to: string }[] }[] } }>('/admin/debug/schema')
+  },
 }

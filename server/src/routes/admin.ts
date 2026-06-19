@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express'
-import { all, get, run, beginBatch, endBatch } from '../db/index.js'
+import { all, get, run, getDb, saveDatabase, beginBatch, endBatch } from '../db/index.js'
 import { v4 as uuidv4 } from 'uuid'
 import jwt from 'jsonwebtoken'
 import { randomBytes } from 'crypto'
@@ -1736,5 +1736,108 @@ adminRouter.get('/export', requireAuth, (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ success: false, error: 'Failed to export data' })
     }
+  }
+})
+
+// ===== Debug Tools =====
+
+// 危险 SQL 关键字黑名单
+const DANGEROUS_SQL = /\b(DROP\s+TABLE|DROP\s+DATABASE|ALTER\s+TABLE\s+\w+\s+DROP|ATTACH|DETACH)\b/i
+
+adminRouter.post('/debug/query', requireAuth, (req, res) => {
+  try {
+    const { sql } = req.body
+    if (!sql || typeof sql !== 'string') {
+      return res.status(400).json({ success: false, error: '请提供 SQL 语句' })
+    }
+
+    const trimmed = sql.trim()
+    if (!trimmed) {
+      return res.status(400).json({ success: false, error: 'SQL 语句不能为空' })
+    }
+
+    // 安全检查：禁止危险操作
+    if (DANGEROUS_SQL.test(trimmed)) {
+      return res.status(403).json({ success: false, error: '禁止执行危险的 SQL 操作（如 DROP TABLE）' })
+    }
+
+    const database = getDb()
+    const isSelect = /^\s*(SELECT|PRAGMA|EXPLAIN)/i.test(trimmed)
+
+    if (isSelect) {
+      const stmt = database.prepare(trimmed)
+      const columns: string[] = []
+      const rows: Record<string, unknown>[] = []
+
+      // 获取列名
+      if (stmt.step()) {
+        const firstRow = stmt.getAsObject()
+        const cols = Object.keys(firstRow)
+        columns.push(...cols)
+        rows.push(firstRow)
+
+        while (stmt.step()) {
+          rows.push(stmt.getAsObject())
+        }
+      }
+
+      stmt.free()
+      res.json({ success: true, data: { columns, rows, changes: 0 } })
+    } else {
+      database.run(trimmed)
+      const changes = database.getRowsModified()
+      // 非 SELECT 操作也需要保存到文件
+      saveDatabase()
+
+      res.json({ success: true, data: { columns: [], rows: [], changes } })
+    }
+  } catch (error) {
+    console.error('Error executing debug query:', error)
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'SQL 执行失败'
+    })
+  }
+})
+
+adminRouter.get('/debug/schema', requireAuth, (req, res) => {
+  try {
+    // 获取所有表名
+    const tablesList = all<{ name: string; sql: string }>(
+      "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    )
+
+    const tables = tablesList.map(table => {
+      // 获取每个表的列信息
+      const columns = all<{
+        cid: number
+        name: string
+        type: string
+        notnull: number
+        dflt_value: string | null
+        pk: number
+      }>(`PRAGMA table_info('${table.name}')`)
+
+      // 获取外键信息
+      const foreignKeys = all<{
+        id: number
+        seq: number
+        table: string
+        from: string
+        to: string
+      }>(`PRAGMA foreign_key_list('${table.name}')`)
+
+      return {
+        name: table.name,
+        sql: table.sql,
+        columns,
+        foreignKeys
+      }
+    })
+
+    res.json({ success: true, data: { tables } })
+  } catch (error) {
+    console.error('Error fetching schema:', error)
+    res.status(500).json({ success: false, error: '获取 schema 失败' })
   }
 })

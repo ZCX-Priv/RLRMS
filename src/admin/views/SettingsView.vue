@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, defineAsyncComponent } from 'vue'
+import { ref, onMounted, defineAsyncComponent, watch } from 'vue'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { getItem, setItem } from '@/utils/storage'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
-import { Sun, Moon, Monitor, Lock, Info, LogOut, Store, Save, RotateCcw, AlertTriangle, Download, Upload, Database } from 'lucide-vue-next'
+const DebugToolsPanel = defineAsyncComponent(() => import('@/admin/components/DebugToolsPanel.vue'))
+import { Sun, Moon, Monitor, Lock, Info, LogOut, Store, Save, RotateCcw, AlertTriangle, Download, Upload, Database, Code, Wrench, ChevronDown, ChevronRight } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
@@ -38,9 +40,25 @@ const restaurantSettings = ref({
 const loadingSettings = ref(false)
 const savingSettings = ref(false)
 
+// 开发人员选项
+const devMode = ref(false)
+const debugExpanded = ref(false)
+const devModeLoading = ref(false)
+
 onMounted(async () => {
   await appStore.loadTheme(true)
   await fetchSettings()
+  // 从 IndexedDB 加载开发者模式状态
+  const saved = await getItem<boolean>('devMode')
+  if (saved) devMode.value = true
+})
+
+// 监听开发者模式变化并持久化到 IndexedDB
+watch(devMode, async (val) => {
+  await setItem('devMode', val)
+  if (!val) {
+    debugExpanded.value = false
+  }
 })
 
 async function fetchSettings() {
@@ -327,6 +345,46 @@ async function handleImport() {
         <input ref="fileInput" type="file" accept=".zip" @change="handleFileSelect" hidden />
       </div>
     </div>
+
+    <!-- 开发人员选项 -->
+    <div class="settings-section">
+      <h2 class="section-title">
+        <Code :size="18" />
+        开发人员选项
+      </h2>
+      <div class="setting-item">
+        <div class="setting-info">
+          <Code :size="20" />
+          <span>开发人员模式</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" v-model="devMode" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 调试工具（仅在开发人员模式开启时显示） -->
+    <Transition name="collapse">
+      <div v-if="devMode" class="settings-section debug-section">
+        <div
+          class="setting-item clickable"
+          @click="debugExpanded = !debugExpanded"
+        >
+          <div class="setting-info">
+            <Wrench :size="20" />
+            <span>调试工具</span>
+          </div>
+          <ChevronDown v-if="debugExpanded" :size="18" class="collapse-arrow" />
+          <ChevronRight v-else :size="18" class="collapse-arrow" />
+        </div>
+        <Transition name="slide-down">
+          <div v-if="debugExpanded" class="debug-content">
+            <DebugToolsPanel />
+          </div>
+        </Transition>
+      </div>
+    </Transition>
 
     <div class="logout-section">
       <button class="btn btn-danger reset-btn" @click="showResetModal = true">
@@ -798,5 +856,100 @@ async function handleImport() {
   font-size: 0.875rem;
   color: var(--color-error);
   margin: 0;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: var(--color-border);
+  border-radius: 24px;
+  transition: background-color 0.25s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: transform 0.25s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: var(--color-primary);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+
+/* Debug Section */
+.debug-section {
+  overflow: hidden;
+}
+
+.collapse-arrow {
+  color: var(--color-text-muted);
+  transition: transform 0.2s;
+}
+
+.debug-content {
+  padding: 0 var(--spacing-md) var(--spacing-md);
+}
+
+/* Transitions */
+.collapse-enter-active,
+.collapse-leave-active {
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.collapse-enter-from,
+.collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+.collapse-enter-to,
+.collapse-leave-from {
+  opacity: 1;
+  max-height: 1200px;
+}
+
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.25s ease;
+  overflow: hidden;
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+.slide-down-enter-to,
+.slide-down-leave-from {
+  opacity: 1;
+  max-height: 1000px;
 }
 </style>
