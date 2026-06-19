@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import DebugToolsPanel from '@/admin/components/DebugToolsPanel.vue'
-import { Wrench } from 'lucide-vue-next'
+
+const route = useRoute()
+const pageTitle = computed(() => (route.meta.title as string) || '调试工具')
 </script>
 
 <template>
   <div class="debug-page">
     <h1 class="page-title">
-      <Wrench :size="22" />
-      调试工具
+      {{ pageTitle }}
     </h1>
     <DebugToolsPanel />
   </div>

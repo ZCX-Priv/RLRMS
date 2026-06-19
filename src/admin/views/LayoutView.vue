@@ -629,10 +629,23 @@ watch(
   gap: var(--spacing-md);
   font-size: 0.875rem;
   color: var(--color-text-secondary);
+  border-left: 2px solid transparent;
 }
 
 .nav-sub-item:hover {
+  background-color: var(--color-bg-tertiary);
   color: var(--color-text-primary);
+}
+
+.nav-sub-item.nav-item-active {
+  background-color: transparent;
+  color: var(--color-primary);
+  border-left-color: var(--color-primary);
+}
+
+.nav-sub-item.nav-item-active:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-primary);
 }
 
 /* 子菜单展开/收起动画 */
