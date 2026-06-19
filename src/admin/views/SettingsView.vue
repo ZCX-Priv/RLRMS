@@ -49,13 +49,14 @@ onMounted(async () => {
   await appStore.loadDevMode()
 })
 
-// 开关切换处理：打开时弹出警告确认，关闭时直接生效
-function handleDevModeToggle(e: Event) {
-  const target = e.target as HTMLInputElement
-  if (target.checked) {
-    showDevModeConfirm.value = true
-  } else {
+// 开关点击处理：打开时弹出警告确认（开关保持关闭），关闭时直接生效
+function handleDevModeClick() {
+  if (appStore.devMode) {
+    // 当前开启，点击则直接关闭
     appStore.setDevMode(false)
+  } else {
+    // 当前关闭，点击则弹出确认（开关保持关闭状态）
+    showDevModeConfirm.value = true
   }
 }
 
@@ -366,7 +367,7 @@ async function handleImport() {
           <input
             type="checkbox"
             :checked="appStore.devMode"
-            @change="handleDevModeToggle"
+            @click.prevent="handleDevModeClick"
           />
           <span class="toggle-slider"></span>
         </label>
