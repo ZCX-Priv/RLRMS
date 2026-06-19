@@ -632,17 +632,25 @@ loadSchema()
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 7rem);
+  max-height: calc(100vh - 7rem);
+  height: calc(100dvh - 7rem);
+  max-height: calc(100dvh - 7rem);
 }
 
 .tab-content {
-  max-height: 600px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
 /* SQL Layout */
 .sql-layout {
   display: flex;
-  min-height: 350px;
+  min-height: 0;
+  flex: 1;
 }
 
 .schema-sidebar {
@@ -765,6 +773,8 @@ loadSchema()
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sql-input-area {
@@ -839,6 +849,9 @@ loadSchema()
 
 .sql-result {
   padding: 0 10px 10px;
+  max-height: 280px;
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .result-header {
@@ -855,9 +868,10 @@ loadSchema()
 }
 
 .result-table-wrap {
-  overflow-x: auto;
+  overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  max-height: 240px;
 }
 
 .result-table {
@@ -900,6 +914,9 @@ loadSchema()
   border-top: 1px solid var(--color-border-light);
   margin-top: 4px;
   padding-top: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .table-data-header {
@@ -967,10 +984,13 @@ loadSchema()
 /* API Tab */
 .api-groups {
   padding: 8px;
+  max-height: calc(100% - 1rem);
+  overflow-y: auto;
 }
 
 .api-group {
   margin-bottom: 8px;
+  min-height: 0;
 }
 
 .group-header {
@@ -1209,5 +1229,14 @@ loadSchema()
   white-space: pre;
   margin: 0;
   color: var(--color-text-primary);
+}
+
+@media (max-width: 767px) {
+  .debug-panel {
+    height: calc(100vh - 8.5rem);
+    max-height: calc(100vh - 8.5rem);
+    height: calc(100dvh - 8.5rem);
+    max-height: calc(100dvh - 8.5rem);
+  }
 }
 </style>
