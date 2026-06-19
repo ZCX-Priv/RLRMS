@@ -49,13 +49,15 @@ onMounted(async () => {
   await appStore.loadDevMode()
 })
 
-// 开关点击处理：打开时弹出警告确认（开关保持关闭），关闭时直接生效
-function handleDevModeClick() {
+// 开关点击处理：关闭时直接生效（含 toast），开启时弹出确认（开关保持关闭）
+function handleDevModeClick(e: Event) {
   if (appStore.devMode) {
-    // 当前开启，点击则直接关闭
+    // 当前开启，点击则直接关闭：让浏览器正常切换，同时更新 store + toast
     appStore.setDevMode(false)
+    appStore.showToast('已禁用调试工具', 'success')
   } else {
-    // 当前关闭，点击则弹出确认（开关保持关闭状态）
+    // 当前关闭，点击则弹出确认：阻止切换，保持关闭状态
+    e.preventDefault()
     showDevModeConfirm.value = true
   }
 }
@@ -367,7 +369,7 @@ async function handleImport() {
           <input
             type="checkbox"
             :checked="appStore.devMode"
-            @click.prevent="handleDevModeClick"
+            @click="handleDevModeClick"
           />
           <span class="toggle-slider"></span>
         </label>
