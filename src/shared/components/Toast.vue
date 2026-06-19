@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { CheckCircle, XCircle, Info } from 'lucide-vue-next'
+import type { Component } from 'vue'
 
 const appStore = useAppStore()
 
-const iconComponent = computed(() => {
-  switch (appStore.toast.type) {
+// 根据类型返回对应图标组件
+function getIcon(type: 'success' | 'error' | 'info'): Component {
+  switch (type) {
     case 'success':
       return CheckCircle
     case 'error':
@@ -14,10 +15,11 @@ const iconComponent = computed(() => {
     default:
       return Info
   }
-})
+}
 
-const iconColor = computed(() => {
-  switch (appStore.toast.type) {
+// 根据类型返回对应图标颜色
+function getIconColor(type: 'success' | 'error' | 'info'): string {
+  switch (type) {
     case 'success':
       return 'var(--color-success)'
     case 'error':
@@ -25,29 +27,31 @@ const iconColor = computed(() => {
     default:
       return 'var(--color-info)'
   }
-})
+}
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition name="toast">
-      <div v-if="appStore.toast.show" class="toast-container">
-        <div class="toast" :class="`toast-${appStore.toast.type}`">
-          <component :is="iconComponent" :size="20" :color="iconColor" />
-          <span class="toast-message">{{ appStore.toast.message }}</span>
-        </div>
+    <TransitionGroup name="toast" tag="div" class="toast-stack">
+      <div v-for="item in appStore.toasts" :key="item.id" class="toast" :class="`toast-${item.type}`">
+        <component :is="getIcon(item.type)" :size="20" :color="getIconColor(item.type)" />
+        <span class="toast-message">{{ item.message }}</span>
       </div>
-    </Transition>
+    </TransitionGroup>
   </Teleport>
 </template>
 
 <style scoped>
-.toast-container {
+.toast-stack {
   position: fixed;
   top: var(--spacing-lg);
   left: 50%;
   transform: translateX(-50%);
   z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
   will-change: transform, opacity;
 }
 
@@ -79,51 +83,55 @@ const iconColor = computed(() => {
   animation: toastLeave var(--duration-fast) var(--ease-in);
 }
 
+.toast-move {
+  transition: transform var(--duration-normal) var(--ease-bounce);
+}
+
 @-webkit-keyframes toastEnter {
   0% {
     opacity: 0;
-    -webkit-transform: translateX(-50%) translateY(-30px) scale(0.9);
-    transform: translateX(-50%) translateY(-30px) scale(0.9);
+    -webkit-transform: translateY(-30px) scale(0.9);
+    transform: translateY(-30px) scale(0.9);
   }
   100% {
     opacity: 1;
-    -webkit-transform: translateX(-50%) translateY(0) scale(1);
-    transform: translateX(-50%) translateY(0) scale(1);
+    -webkit-transform: translateY(0) scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes toastEnter {
   0% {
     opacity: 0;
-    transform: translateX(-50%) translateY(-30px) scale(0.9);
+    transform: translateY(-30px) scale(0.9);
   }
   100% {
     opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 
 @-webkit-keyframes toastLeave {
   0% {
     opacity: 1;
-    -webkit-transform: translateX(-50%) translateY(0) scale(1);
-    transform: translateX(-50%) translateY(0) scale(1);
+    -webkit-transform: translateY(0) scale(1);
+    transform: translateY(0) scale(1);
   }
   100% {
     opacity: 0;
-    -webkit-transform: translateX(-50%) translateY(-20px) scale(0.95);
-    transform: translateX(-50%) translateY(-20px) scale(0.95);
+    -webkit-transform: translateY(-20px) scale(0.95);
+    transform: translateY(-20px) scale(0.95);
   }
 }
 
 @keyframes toastLeave {
   0% {
     opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
+    transform: translateY(0) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translateX(-50%) translateY(-20px) scale(0.95);
+    transform: translateY(-20px) scale(0.95);
   }
 }
 </style>

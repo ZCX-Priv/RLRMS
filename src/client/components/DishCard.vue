@@ -3,6 +3,7 @@ import { ref, computed, defineAsyncComponent } from 'vue'
 import type { Dish } from '@/types'
 import { useCartStore } from '@/stores/cart'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
+import { Plus } from 'lucide-vue-next'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 
@@ -121,8 +122,14 @@ function handleUpdateQuantity(quantity: number) {
       <div class="dish-price-row">
         <span class="dish-price">{{ dish.price }}元</span>
         <div class="quantity-wrapper" @click.stop>
-          <div v-if="quantityInCart === 0" class="add-btn" @click="handleAddToCart">
-            {{ hasSpecs ? '选规格' : '+' }}
+          <div
+            v-if="quantityInCart === 0"
+            class="add-btn"
+            :class="{ 'add-btn-icon': !hasSpecs }"
+            @click="handleAddToCart"
+          >
+            <template v-if="hasSpecs">选规格</template>
+            <Plus v-else :size="14" />
           </div>
           <QuantityControl
             v-else
@@ -317,6 +324,12 @@ function handleUpdateQuantity(quantity: number) {
 
 .add-btn:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.add-btn-icon {
+  width: 24px;
+  padding: 0;
+  border-radius: 50%;
 }
 
 .spec-content {

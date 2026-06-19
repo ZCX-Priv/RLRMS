@@ -4,7 +4,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-import { getItem } from '@/utils/storage'
 import {
   Home,
   UtensilsCrossed,
@@ -25,12 +24,10 @@ const appStore = useAppStore()
 
 const sidebarCollapsed = ref(false)
 const mobileSidebarOpen = ref(false)
-const devMode = ref(false)
 
 onMounted(async () => {
   await appStore.loadTheme(true)
-  const saved = await getItem<boolean>('devMode')
-  if (saved) devMode.value = true
+  await appStore.loadDevMode()
 })
 
 // 追踪导航项切换动画
@@ -45,7 +42,7 @@ const navItems = computed(() => {
     { icon: UserCircle, label: '用户管理', path: '/admin/users' },
     { icon: Settings, label: '系统设置', path: '/admin/settings' },
   ]
-  if (devMode.value) {
+  if (appStore.devMode) {
     items.push({ icon: Code, label: '调试工具', path: '/admin/debug' })
   }
   return items

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, defineAsyncComponent, watch } from 'vue'
+import { ref, onMounted, defineAsyncComponent } from 'vue'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-import { getItem, setItem } from '@/utils/storage'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
+const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
 import { Sun, Moon, Monitor, Lock, Info, LogOut, Save, RotateCcw, AlertTriangle, Download, Upload, Code } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
@@ -39,21 +39,35 @@ const restaurantSettings = ref({
 const loadingSettings = ref(false)
 const savingSettings = ref(false)
 
-// 开发人员选项
-const devMode = ref(false)
+// 调试工具启用确认弹窗
+const showDevModeConfirm = ref(false)
 
 onMounted(async () => {
   await appStore.loadTheme(true)
   await fetchSettings()
-  // 从 IndexedDB 加载开发者模式状态
-  const saved = await getItem<boolean>('devMode')
-  if (saved) devMode.value = true
+  // 从 IndexedDB 加载开发者模式状态（统一由 store 管理）
+  await appStore.loadDevMode()
 })
 
-// 监听开发者模式变化并持久化到 IndexedDB
-watch(devMode, async (val) => {
-  await setItem('devMode', val)
-})
+// 开关切换处理：打开时弹出警告确认，关闭时直接生效
+function handleDevModeToggle(e: Event) {
+  const target = e.target as HTMLInputElement
+  if (target.checked) {
+    showDevModeConfirm.value = true
+  } else {
+    appStore.setDevMode(false)
+  }
+}
+
+function confirmDevMode() {
+  showDevModeConfirm.value = false
+  appStore.setDevMode(true)
+  appStore.showToast('已启用调试工具', 'success')
+}
+
+function cancelDevMode() {
+  showDevModeConfirm.value = false
+}
 
 async function fetchSettings() {
   try {
@@ -349,7 +363,11 @@ async function handleImport() {
           <span>调试工具</span>
         </div>
         <label class="toggle-switch">
-          <input type="checkbox" v-model="devMode" />
+          <input
+            type="checkbox"
+            :checked="appStore.devMode"
+            @change="handleDevModeToggle"
+          />
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -528,6 +546,18 @@ async function handleImport() {
         </button>
       </template>
     </Modal>
+
+    <!-- 启用调试工具确认弹窗 -->
+    <ConfirmDialog
+      :show="showDevModeConfirm"
+      title="启用调试工具"
+      message="调试工具包含高级功能，仅供开发人员使用，误操作可能影响系统数据。确定要启用吗？"
+      confirm-text="启用"
+      cancel-text="取消"
+      type="warning"
+      @confirm="confirmDevMode"
+      @cancel="cancelDevMode"
+    />
   </div>
 </template>
 

@@ -58,20 +58,50 @@ export const useAppStore = defineStore('app', () => {
     isLoading.value = loading
   }
 
-  const toast = ref<{
-    show: boolean
+  // 调试工具开关状态（全局共享，响应式联动侧边栏）
+  const devMode = ref(false)
+
+  async function loadDevMode() {
+    const saved = await getItem<boolean>('devMode')
+    if (saved) devMode.value = true
+  }
+
+  async function setDevMode(val: boolean) {
+    devMode.value = val
+    await setItem('devMode', val)
+  }
+
+  // toast 自增 id，保证每条唯一标识
+  let toastId = 0
+
+  type ToastItem = {
+    id: number
     message: string
     type: 'success' | 'error' | 'info'
-  }>({
-    show: false,
-    message: '',
-    type: 'info',
-  })
+  }
+
+  // 同时显示的最大条数，超过时移除最早的一条
+  const MAX_TOASTS = 5
+
+  const toasts = ref<ToastItem[]>([])
+
+  function removeToast(id: number) {
+    const index = toasts.value.findIndex((t) => t.id === id)
+    if (index !== -1) {
+      toasts.value.splice(index, 1)
+    }
+  }
 
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
-    toast.value = { show: true, message, type }
+    const id = ++toastId
+    toasts.value.push({ id, message, type })
+    // 超过最大条数时移除最早的一条
+    if (toasts.value.length > MAX_TOASTS) {
+      toasts.value.shift()
+    }
+    // 每条 toast 独立定时器，互不影响
     setTimeout(() => {
-      toast.value.show = false
+      removeToast(id)
     }, 3000)
   }
 
@@ -82,7 +112,10 @@ export const useAppStore = defineStore('app', () => {
     setTheme,
     isLoading,
     setLoading,
-    toast,
+    devMode,
+    loadDevMode,
+    setDevMode,
+    toasts,
     showToast,
   }
 })
