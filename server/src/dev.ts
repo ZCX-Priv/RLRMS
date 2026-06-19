@@ -35,10 +35,17 @@ async function startDevServer() {
         // Vite 7 transformIndexHtml 可能抛出非致命错误（如 vite:json 插件解析），
         // 如果 template 仍有效则继续使用，否则向上抛出
         if (!template) throw transformErr
-        const msg = (transformErr as Error).message
+        const err = transformErr as Error & { id?: string; plugin?: string; file?: string; loc?: unknown }
+        const msg = err.message
         if (!warnedMessages.has(msg)) {
           warnedMessages.add(msg)
-          console.warn('transformIndexHtml warning (suppressed duplicates):', msg)
+          console.warn('transformIndexHtml warning (suppressed duplicates):', {
+            message: msg,
+            id: err.id,
+            plugin: err.plugin,
+            file: err.file,
+            loc: err.loc,
+          })
         }
       }
       res.status(200).set({ 'Content-Type': 'text/html' }).end(template)

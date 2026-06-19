@@ -324,10 +324,11 @@ export const api = {
     })
   },
   
-  async getAdminOrders(filters?: { status?: string; date?: string }) {
+  async getAdminOrders(filters?: { status?: string; startDate?: string; endDate?: string }) {
     const params = new URLSearchParams()
     if (filters?.status) params.set('status', filters.status)
-    if (filters?.date) params.set('date', filters.date)
+    if (filters?.startDate) params.set('startDate', filters.startDate)
+    if (filters?.endDate) params.set('endDate', filters.endDate)
     const query = params.toString() ? `?${params.toString()}` : ''
     return request<{ success: boolean; data: Order[] }>(`/admin/orders${query}`)
   },

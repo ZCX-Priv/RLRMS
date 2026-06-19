@@ -117,24 +117,26 @@ function getLocalDateString(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-function getDateParam(): string | undefined {
+function getDateParam(): { startDate: string; endDate: string } | undefined {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  
+
   if (dateFilter.value === 'today') {
-    return getLocalDateString(today)
+    const s = getLocalDateString(today)
+    return { startDate: s, endDate: s }
   } else if (dateFilter.value === 'yesterday') {
     const yesterday = new Date(today)
     yesterday.setDate(yesterday.getDate() - 1)
-    return getLocalDateString(yesterday)
+    const s = getLocalDateString(yesterday)
+    return { startDate: s, endDate: s }
   } else if (dateFilter.value === 'week') {
     const weekAgo = new Date(today)
     weekAgo.setDate(weekAgo.getDate() - 7)
-    return getLocalDateString(weekAgo)
+    return { startDate: getLocalDateString(weekAgo), endDate: getLocalDateString(today) }
   } else if (dateFilter.value === 'month') {
     const monthAgo = new Date(today)
     monthAgo.setMonth(monthAgo.getMonth() - 1)
-    return getLocalDateString(monthAgo)
+    return { startDate: getLocalDateString(monthAgo), endDate: getLocalDateString(today) }
   }
   return undefined
 }
@@ -162,10 +164,11 @@ async function fetchOrders(isPollingRefresh = false) {
     if (!isPollingRefresh && !ordersInitialized.value) {
       ordersLoading.value = true
     }
-    const dateParam = getDateParam()
-    const res = await api.getAdminOrders({ 
+    const dateRange = getDateParam()
+    const res = await api.getAdminOrders({
       status: statusFilter.value || undefined,
-      date: dateParam
+      startDate: dateRange?.startDate,
+      endDate: dateRange?.endDate,
     })
     orders.value = res.data
     ordersInitialized.value = true

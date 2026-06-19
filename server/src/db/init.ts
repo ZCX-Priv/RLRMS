@@ -1,4 +1,4 @@
-import { initDatabase, run, get, beginBatch, endBatch } from './index.js'
+import { initDatabase, run, get, all, beginBatch, endBatch } from './index.js'
 import bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -148,6 +148,38 @@ export async function initializeDatabase() {
       run('INSERT INTO settings (key, value) VALUES (?, ?)', [setting.key, setting.value])
     }
     console.log('Default settings created')
+  }
+
+  // === 迁移：历史 customer 的 username 从 phone 改为数字会员号 ===
+  // 幂等：只处理 username = phone 的 customer（迁移后 username != phone，不会重复执行）
+  const legacyCustomers = all<{ id: string; phone: string }>(
+    "SELECT id, phone FROM users WHERE role = 'customer' AND phone IS NOT NULL AND username = phone"
+  )
+  if (legacyCustomers.length > 0) {
+    let memberNo = 10001
+    for (const c of legacyCustomers) {
+      // 跳过已占用的会员号（防止与已迁移的冲突）
+      while (get<{ id: string }>('SELECT id FROM users WHERE username = ?', [String(memberNo)])) {
+        memberNo++
+      }
+      run('UPDATE users SET username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [String(memberNo), c.id])
+      memberNo++
+    }
+    console.log(`Migrated ${legacyCustomers.length} legacy customers to member numbers`)
+  }
+
+  // === 回填：历史订单 user_id ===
+  // 幂等：只处理 user_id IS NULL（回填后非 NULL，不会重复）
+  // 安全：auth.ts 查重逻辑保证一个 phone 对应一个 customer 记录
+  const backfillResult = run(`
+    UPDATE orders
+    SET user_id = (SELECT id FROM users WHERE phone = orders.contact_phone AND role = 'customer')
+    WHERE user_id IS NULL
+      AND contact_phone IS NOT NULL
+      AND EXISTS (SELECT 1 FROM users WHERE phone = orders.contact_phone AND role = 'customer')
+  `)
+  if (backfillResult.changes > 0) {
+    console.log(`Backfilled user_id for ${backfillResult.changes} orders`)
   }
 
   // End batch operation and save database once

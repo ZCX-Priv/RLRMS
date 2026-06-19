@@ -613,7 +613,7 @@ adminRouter.put('/categories/reorder', requireAuth, (req, res) => {
 
 adminRouter.get('/orders', requireAuth, (req, res) => {
   try {
-    const { status, date } = req.query
+    const { status, startDate, endDate } = req.query
     let query = `
       SELECT o.*, t.name as table_name, t.table_no
       FROM orders o
@@ -621,15 +621,19 @@ adminRouter.get('/orders', requireAuth, (req, res) => {
       WHERE 1=1
     `
     const params: (string | number | null)[] = []
-    
+
     if (status) {
       query += ' AND o.status = ?'
       params.push(status as string)
     }
-    
-    if (date) {
-      query += ' AND date(o.created_at, \'localtime\') = ?'
-      params.push(date as string)
+
+    if (startDate) {
+      query += ' AND date(o.created_at, \'localtime\') >= ?'
+      params.push(startDate as string)
+    }
+    if (endDate) {
+      query += ' AND date(o.created_at, \'localtime\') <= ?'
+      params.push(endDate as string)
     }
     
     query += ' ORDER BY o.created_at DESC'
@@ -795,6 +799,44 @@ adminRouter.put('/orders/:id/status', requireAuth, (req, res) => {
   } catch (error) {
     console.error('Error updating order status:', error)
     res.status(500).json({ success: false, error: 'Failed to update order status' })
+  }
+})
+
+// 删除单条订单
+adminRouter.delete('/orders/:id', requireAuth, (req, res) => {
+  try {
+    const id = req.params.id as string
+
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: '无效的 ID 格式' })
+    }
+
+    const order = get<{ id: string; table_id: string | null; status: string }>(
+      'SELECT * FROM orders WHERE id = ?', [id]
+    )
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: '订单不存在' })
+    }
+
+    // 删除关联的订单项和订单记录
+    beginBatch()
+    run('DELETE FROM order_items WHERE order_id = ?', [id])
+    run('DELETE FROM orders WHERE id = ?', [id])
+    endBatch()
+
+    // 如果订单关联桌位且处于活跃状态，释放桌位
+    if (order.table_id && (order.status === 'pending' || order.status === 'confirmed')) {
+      run('UPDATE tables SET status = \'available\', updated_at = CURRENT_TIMESTAMP WHERE id = ?', [order.table_id])
+    }
+
+    // SSE 广播订单删除事件
+    broadcastSSE('order_deleted', { id })
+
+    res.json({ success: true, message: '订单已删除' })
+  } catch (error) {
+    console.error('Error deleting order:', error)
+    res.status(500).json({ success: false, error: '删除订单失败' })
   }
 })
 

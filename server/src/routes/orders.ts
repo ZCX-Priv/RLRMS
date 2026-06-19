@@ -284,9 +284,9 @@ ordersRouter.post('/', requireClientAuth, (req, res) => {
     
     // Insert order
     run(`
-      INSERT INTO orders (id, order_no, table_id, dining_time, contact_name, contact_phone, total_amount, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-    `, [orderId, orderNo, table_id || null, dining_time, contact_name, contact_phone, totalAmount])
+      INSERT INTO orders (id, order_no, table_id, user_id, dining_time, contact_name, contact_phone, total_amount, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `, [orderId, orderNo, table_id || null, (req as any).clientUserId, dining_time, contact_name, contact_phone, totalAmount])
     
     // Insert order items (使用服务端验证后的价格)
     for (const item of verifiedItems) {

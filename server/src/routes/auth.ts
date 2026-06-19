@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { randomBytes } from 'crypto'
 import { JWT_SECRET } from '../utils/jwt.js'
+import { generateMemberNo } from '../utils/memberNo.js'
 
 /**
  * JWT Payload 类型定义
@@ -227,12 +228,22 @@ authRouter.post('/client/login', async (req: Request, res: Response) => {
     if (!user) {
       // Auto-register
       const hashedPassword = await bcrypt.hash(password, 10)
-      const id = randomBytes(16).toString('hex')
-      run(
-        'INSERT INTO users (id, username, password, role, phone, name) VALUES (?, ?, ?, ?, ?, ?)',
-        [id, phone, hashedPassword, 'customer', phone, `用户${phone.slice(-4)}`]
-      )
-      user = get<typeof user>('SELECT * FROM users WHERE id = ?', [id])
+      let created: typeof user | undefined
+      // 重试：并发注册可能生成相同会员号，靠 users.username UNIQUE 约束兜底
+      for (let attempt = 0; attempt < 3 && !created; attempt++) {
+        const id = randomBytes(16).toString('hex')
+        const memberNo = generateMemberNo()
+        try {
+          run(
+            'INSERT INTO users (id, username, password, role, phone, name) VALUES (?, ?, ?, ?, ?, ?)',
+            [id, memberNo, hashedPassword, 'customer', phone, `用户${phone.slice(-4)}`]
+          )
+          created = get<typeof user>('SELECT * FROM users WHERE id = ?', [id])
+        } catch (e) {
+          if (attempt === 2) throw e
+        }
+      }
+      user = created
       if (!user) {
         return res.status(500).json({ success: false, error: '注册失败' })
       }
