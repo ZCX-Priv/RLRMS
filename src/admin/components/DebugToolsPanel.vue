@@ -651,6 +651,7 @@ loadSchema()
   display: flex;
   min-height: 0;
   flex: 1;
+  height: 100%;
 }
 
 .schema-sidebar {
@@ -659,6 +660,7 @@ loadSchema()
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  height: 100%;
 }
 
 .sidebar-header {
@@ -849,9 +851,10 @@ loadSchema()
 
 .sql-result {
   padding: 0 10px 10px;
-  max-height: 280px;
-  overflow-y: auto;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .result-header {
@@ -879,6 +882,7 @@ loadSchema()
   border-collapse: collapse;
   font-size: 0.75rem;
   font-family: 'Cascadia Code', 'Fira Code', monospace;
+  table-layout: fixed;
 }
 
 .result-table th {
@@ -914,9 +918,10 @@ loadSchema()
   border-top: 1px solid var(--color-border-light);
   margin-top: 4px;
   padding-top: 8px;
-  max-height: 280px;
-  overflow-y: auto;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .table-data-header {
