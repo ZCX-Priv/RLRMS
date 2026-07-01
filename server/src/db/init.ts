@@ -46,7 +46,7 @@ export async function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS dishes (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      price REAL NOT NULL,
+      price TEXT NOT NULL,
       image_url TEXT,
       category_id TEXT,
       description TEXT,
@@ -95,6 +95,20 @@ export async function initializeDatabase() {
   `)
 
   run(`
+    CREATE TABLE IF NOT EXISTS order_modifications (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL,
+      dish_id TEXT NOT NULL,
+      dish_name TEXT NOT NULL,
+      quantity_delta INTEGER NOT NULL,
+      unit_price REAL NOT NULL,
+      spec TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    )
+  `)
+
+  run(`
     CREATE TABLE IF NOT EXISTS inventory (
       id TEXT PRIMARY KEY,
       material_name TEXT NOT NULL,
@@ -121,7 +135,22 @@ export async function initializeDatabase() {
     )
   `)
 
-  console.log('Database tables initialized')
+  // === 创建索引以提升查询性能 ===
+  run('CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)')
+  run('CREATE INDEX IF NOT EXISTS idx_orders_contact_phone ON orders(contact_phone)')
+  run('CREATE INDEX IF NOT EXISTS idx_orders_table_id ON orders(table_id)')
+  run('CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)')
+  run('CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)')
+  run('CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id)')
+  run('CREATE INDEX IF NOT EXISTS idx_order_modifications_order_id ON order_modifications(order_id)')
+  run('CREATE INDEX IF NOT EXISTS idx_dishes_category_id ON dishes(category_id)')
+  run('CREATE INDEX IF NOT EXISTS idx_dishes_status ON dishes(status)')
+  run('CREATE INDEX IF NOT EXISTS idx_dishes_sort_order ON dishes(sort_order)')
+  run('CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone)')
+  run('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)')
+  run('CREATE INDEX IF NOT EXISTS idx_tables_status ON tables(status)')
+
+  console.log('Database tables and indexes initialized')
 
   const adminExists = get<{ id: string }>('SELECT id FROM users WHERE role = ?', ['admin'])
   if (!adminExists) {
@@ -140,9 +169,11 @@ export async function initializeDatabase() {
       { key: 'restaurant_name', value: '红灯笼食府' },
       { key: 'restaurant_phone', value: '' },
       { key: 'restaurant_address', value: '' },
-      { key: 'business_hours', value: '11:00-21:00' },
+      { key: 'business_hours', value: '{"days":[1,2,3,4,5,6,7],"periods":[{"open":"10:00","close":"14:00"},{"open":"16:30","close":"22:00"}]}' },
       { key: 'notification_email', value: '' },
       { key: 'notification_phone', value: '' },
+      { key: 'restaurant_description', value: '红灯笼食府秉承传统中餐烹饪技艺，精选时令食材，匠心打造每一道佳肴。我们致力于为宾客提供地道的中华美食体验，温馨舒适的用餐环境，以及贴心周到的服务。' },
+      { key: 'restaurant_features', value: '传统中餐,时令食材,私密包厢,家庭聚餐' },
     ]
     for (const setting of defaultSettings) {
       run('INSERT INTO settings (key, value) VALUES (?, ?)', [setting.key, setting.value])

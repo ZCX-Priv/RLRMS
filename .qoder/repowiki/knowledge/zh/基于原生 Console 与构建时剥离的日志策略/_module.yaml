@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: logging_system
+title: 基于原生 Console 与构建时剥离的日志策略
+scope: []
+source_files:
+    - vite.config.ts
+    - server/src/index.ts
+    - server/src/db/init.ts
+    - scripts/build-production.mjs
+depends_on: []
+related_to: []

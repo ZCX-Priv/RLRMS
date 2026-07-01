@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: backend
+title: 红灯笼餐厅管理系统后端服务
+scope:
+    - server/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend

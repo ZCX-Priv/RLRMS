@@ -8,6 +8,7 @@ import compression from 'compression'
 import { resolve } from 'path'
 import { initializeDatabase } from './db/init.js'
 import { apiRouter } from './routes/index.js'
+import { flushSave } from './db/index.js'
 
 if (process.platform === 'win32') {
   try {
@@ -43,8 +44,8 @@ export function createApp(): Express {
 
   app.use(cookieParser())
   app.use(compression({
-    threshold: 1024,
-    level: 6,
+    threshold: 512,
+    level: 4,
     filter: (req, res) => {
       // SSE 响应不能压缩，否则数据会被缓冲无法实时推送
       if (res.getHeader('Content-Type')?.toString().includes('text/event-stream')) {
@@ -78,7 +79,8 @@ export function createApp(): Express {
   })
 
   app.use('/sources', express.static(resolve(process.cwd(), 'public/sources'), {
-    maxAge: '7d',
+    maxAge: '30d',
+    immutable: true,
     etag: true,
     lastModified: true,
   }))
@@ -96,8 +98,15 @@ export function createApp(): Express {
   // 生产环境：托管前端构建产物 + SPA fallback
   if (isProduction) {
     const distPath = resolve(process.cwd(), 'dist')
+    // assets 目录下的文件带有内容哈希，可长期缓存
+    app.use('/assets', express.static(resolve(distPath, 'assets'), {
+      maxAge: '1y',
+      immutable: true,
+      etag: false,
+    }))
+    // 其他静态文件（如 index.html）不长期缓存
     app.use(express.static(distPath, {
-      maxAge: '1d',
+      maxAge: 0,
       etag: true,
       lastModified: true,
     }))
@@ -159,4 +168,8 @@ if (isProduction) {
     console.log('Database initialization in progress...')
   })
   initDb(server)
+
+  // 注册进程退出钩子，确保防抖缓冲区中的数据不会丢失
+  process.on('SIGTERM', () => { flushSave(); process.exit(0) })
+  process.on('SIGINT', () => { flushSave(); process.exit(0) })
 }

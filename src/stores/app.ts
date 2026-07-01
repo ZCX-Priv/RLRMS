@@ -26,7 +26,11 @@ export const useAppStore = defineStore('app', () => {
   mediaQuery.addEventListener('change', (e: MediaQueryListEvent) => {
     systemTheme.value = e.matches ? 'dark' : 'light'
     if (theme.value === 'system') {
-      document.documentElement.setAttribute('data-theme', systemTheme.value)
+      const effective = systemTheme.value
+      document.documentElement.setAttribute('data-theme', effective)
+      // 同步写入 localStorage
+      const key = isAdminMode.value ? ADMIN_THEME_KEY : CLIENT_THEME_KEY
+      localStorage.setItem(key, effective)
     }
   })
 
@@ -38,6 +42,8 @@ export const useAppStore = defineStore('app', () => {
       theme.value = savedTheme
     }
     const effective = theme.value === 'system' ? systemTheme.value : theme.value
+    // 同步写入 localStorage，供 index.html 内联脚本预加载主题
+    localStorage.setItem(key, effective)
     const currentTheme = document.documentElement.getAttribute('data-theme')
     if (currentTheme !== effective) {
       document.documentElement.setAttribute('data-theme', effective)
@@ -49,6 +55,8 @@ export const useAppStore = defineStore('app', () => {
     const key = isAdminMode.value ? ADMIN_THEME_KEY : CLIENT_THEME_KEY
     await setItem(key, newTheme)
     const effective = newTheme === 'system' ? systemTheme.value : newTheme
+    // 同步写入 localStorage，供 index.html 内联脚本预加载主题
+    localStorage.setItem(key, effective)
     document.documentElement.setAttribute('data-theme', effective)
   }
 

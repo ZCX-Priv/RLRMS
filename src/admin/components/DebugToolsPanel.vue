@@ -5,7 +5,7 @@ import { api } from '@/api'
 import {
   Table2, Play, Send, Trash2, Hash, ChevronRight, Copy, AlertCircle, CheckCircle2,
   Database, RefreshCw, LayoutDashboard, Armchair, UtensilsCrossed, FolderOpen,
-  ClipboardList, Package, UserCircle, Settings
+  ClipboardList, Package, UserCircle, Settings, Upload, Download
 } from 'lucide-vue-next'
 
 // ===== Tab 切换（由路由驱动） =====
@@ -69,6 +69,7 @@ const apiGroups: ApiGroup[] = [
     endpoints: [
       { method: 'GET', path: '/admin/dishes', description: '获取所有菜品列表' },
       { method: 'POST', path: '/admin/dishes', description: '创建新菜品', defaultBody: '{\n  "name": "新菜品",\n  "price": 28.0,\n  "category_id": "",\n  "description": "菜品描述",\n  "tags": ["推荐"],\n  "specs": []\n}' },
+      { method: 'PUT', path: '/admin/dishes/reorder', description: '菜品排序', defaultBody: '{\n  "orders": [\n    { "id": "菜品ID", "sort_order": 0 }\n  ]\n}' },
       { method: 'PUT', path: '/admin/dishes/:id', description: '更新菜品信息', params: [{ name: 'id', type: 'path' }], defaultBody: '{\n  "name": "更新名称",\n  "price": 38.0\n}' },
       { method: 'DELETE', path: '/admin/dishes/:id', description: '删除菜品', params: [{ name: 'id', type: 'path' }] }
     ]
@@ -79,6 +80,7 @@ const apiGroups: ApiGroup[] = [
     endpoints: [
       { method: 'GET', path: '/admin/categories', description: '获取所有分类列表' },
       { method: 'POST', path: '/admin/categories', description: '创建新分类', defaultBody: '{\n  "name": "新分类",\n  "sort_order": 0\n}' },
+      { method: 'PUT', path: '/admin/categories/reorder', description: '分类排序', defaultBody: '{\n  "orders": [\n    { "id": "分类ID", "sort_order": 0 }\n  ]\n}' },
       { method: 'DELETE', path: '/admin/categories/:id', description: '删除分类', params: [{ name: 'id', type: 'path' }] }
     ]
   },
@@ -99,8 +101,17 @@ const apiGroups: ApiGroup[] = [
     endpoints: [
       { method: 'GET', path: '/admin/inventory', description: '获取库存列表' },
       { method: 'POST', path: '/admin/inventory', description: '创建库存项', defaultBody: '{\n  "material_name": "物料名",\n  "quantity": 100,\n  "unit": "kg",\n  "warning_threshold": 10\n}' },
+      { method: 'PUT', path: '/admin/inventory/reorder', description: '库存排序', defaultBody: '{\n  "orders": [\n    { "id": "库存ID", "sort_order": 0 }\n  ]\n}' },
       { method: 'PUT', path: '/admin/inventory/:id', description: '更新库存项', params: [{ name: 'id', type: 'path' }], defaultBody: '{\n  "quantity": 50,\n  "warning_threshold": 10\n}' },
       { method: 'DELETE', path: '/admin/inventory/:id', description: '删除库存项', params: [{ name: 'id', type: 'path' }] }
+    ]
+  },
+  {
+    name: '图片管理',
+    icon: Upload,
+    endpoints: [
+      { method: 'POST', path: '/admin/upload', description: '上传图片（需文件上传，调试器暂不支持直接发送）' },
+      { method: 'DELETE', path: '/admin/image', description: '删除图片', defaultBody: '{\n  "url": "/sources/xxx.webp"\n}' }
     ]
   },
   {
@@ -118,8 +129,16 @@ const apiGroups: ApiGroup[] = [
     icon: Settings,
     endpoints: [
       { method: 'GET', path: '/admin/settings', description: '获取系统设置' },
-      { method: 'PUT', path: '/admin/settings', description: '更新系统设置', defaultBody: '{\n  "restaurant_name": "红灯笼食府",\n  "business_hours": "11:00-21:00"\n}' },
+      { method: 'PUT', path: '/admin/settings', description: '更新系统设置', defaultBody: '{\n  "restaurant_name": "红灯笼食府",\n  "business_hours": "{\\"days\\":[1,2,3,4,5,6,7],\\"periods\\":[{\\"open\\":\\"11:00\\",\\"close\\":\\"14:00\\"},{\\"open\\":\\"17:00\\",\\"close\\":\\"21:00\\"}]}"\n}' },
       { method: 'POST', path: '/admin/reset-database', description: '重置数据库（危险）', defaultBody: '{\n  "confirm": "RESET"\n}' }
+    ]
+  },
+  {
+    name: '数据管理',
+    icon: Download,
+    endpoints: [
+      { method: 'GET', path: '/admin/export', description: '数据导出（返回 ZIP 文件）' },
+      { method: 'POST', path: '/admin/import', description: '数据导入（需文件上传，调试器暂不支持直接发送）' }
     ]
   }
 ]
@@ -930,7 +949,6 @@ const ResizableResultTable = defineComponent({
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  flex: 1;
 }
 
 :deep(.result-table) {

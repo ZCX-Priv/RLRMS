@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/app'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { Sun, Moon, Monitor, Lock, Info, LogOut, Save, RotateCcw, AlertTriangle, Download, Upload, Code } from 'lucide-vue-next'
+import { Sun, Moon, Monitor, Lock, Info, LogOut, Save, RotateCcw, AlertTriangle, Download, Upload, Code, Plus, X, Trash2 } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
@@ -30,11 +30,21 @@ const importFile = ref<File | null>(null)
 const importPreview = ref<any>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 
+const businessHours = ref<{ days: number[]; periods: { open: string; close: string }[] }>({
+  days: [1, 2, 3, 4, 5, 6, 7],
+  periods: [],
+})
+const featuresList = ref<string[]>([])
+const newFeature = ref('')
+const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
 const restaurantSettings = ref({
   restaurant_name: '',
   restaurant_phone: '',
   restaurant_address: '',
   business_hours: '',
+  restaurant_description: '',
+  restaurant_features: '',
 })
 const loadingSettings = ref(false)
 const savingSettings = ref(false)
@@ -82,7 +92,44 @@ async function fetchSettings() {
       restaurant_phone: data.restaurant_phone || '',
       restaurant_address: data.restaurant_address || '',
       business_hours: data.business_hours || '',
+      restaurant_description: data.restaurant_description || '',
+      restaurant_features: data.restaurant_features || '',
     }
+    // 解析营业时间为结构化对象（兼容旧数组格式）
+    try {
+      const parsed = JSON.parse(data.business_hours || '{}')
+      if (Array.isArray(parsed)) {
+        // 旧格式：[{ days, open, close }, ...] 迁移为新格式
+        const allDays = new Set<number>()
+        const periods: { open: string; close: string }[] = []
+        for (const entry of parsed) {
+          if (Array.isArray(entry.days)) {
+            for (const d of entry.days) allDays.add(d)
+          }
+          if (entry.open || entry.close) {
+            periods.push({ open: entry.open || '', close: entry.close || '' })
+          }
+        }
+        businessHours.value = {
+          days: allDays.size > 0 ? Array.from(allDays).sort((a, b) => a - b) : [1, 2, 3, 4, 5, 6, 7],
+          periods: periods.length > 0 ? periods : [{ open: '', close: '' }],
+        }
+      } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.periods)) {
+        // 新格式：{ days, periods }
+        businessHours.value = {
+          days: Array.isArray(parsed.days) ? parsed.days : [1, 2, 3, 4, 5, 6, 7],
+          periods: parsed.periods,
+        }
+      } else {
+        businessHours.value = { days: [1, 2, 3, 4, 5, 6, 7], periods: [{ open: '', close: '' }] }
+      }
+    } catch {
+      businessHours.value = { days: [1, 2, 3, 4, 5, 6, 7], periods: [{ open: '', close: '' }] }
+    }
+    // 解析特色标签为数组
+    featuresList.value = data.restaurant_features
+      ? data.restaurant_features.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : []
   } catch (error) {
     console.error('Failed to fetch settings:', error)
   } finally {
@@ -93,7 +140,12 @@ async function fetchSettings() {
 async function handleSaveSettings() {
   try {
     savingSettings.value = true
-    await api.updateSettings(restaurantSettings.value)
+    const payload = {
+      ...restaurantSettings.value,
+      business_hours: JSON.stringify(businessHours.value),
+      restaurant_features: featuresList.value.join(','),
+    }
+    await api.updateSettings(payload)
     appStore.showToast('设置已保存', 'success')
   } catch (error) {
     console.error('Failed to save settings:', error)
@@ -101,6 +153,27 @@ async function handleSaveSettings() {
   } finally {
     savingSettings.value = false
   }
+}
+
+function addBusinessHoursEntry() {
+  businessHours.value.periods.push({ open: '', close: '' })
+}
+function removeBusinessHoursEntry(index: number) {
+  businessHours.value.periods.splice(index, 1)
+}
+function toggleDay(day: number) {
+  const idx = businessHours.value.days.indexOf(day)
+  idx >= 0 ? businessHours.value.days.splice(idx, 1) : businessHours.value.days.push(day)
+}
+function addFeature() {
+  const tag = newFeature.value.trim()
+  if (tag && !featuresList.value.includes(tag)) {
+    featuresList.value.push(tag)
+    newFeature.value = ''
+  }
+}
+function removeFeature(index: number) {
+  featuresList.value.splice(index, 1)
 }
 
 function handleThemeChange(theme: 'light' | 'dark' | 'system') {
@@ -259,11 +332,64 @@ async function handleImport() {
         </div>
         <div class="form-group">
           <label>营业时间</label>
-          <input
-            v-model="restaurantSettings.business_hours"
-            type="text"
-            placeholder="例如: 11:00-21:00"
-          />
+          <div class="bh-list">
+            <div class="bh-days-header">
+              <div class="day-checks">
+                <button
+                  v-for="(label, di) in DAY_LABELS"
+                  :key="di"
+                  type="button"
+                  class="day-chip"
+                  :class="{ 'day-chip-active': businessHours.days.includes(di + 1) }"
+                  @click="toggleDay(di + 1)"
+                >{{ label }}</button>
+              </div>
+            </div>
+            <div v-for="(period, i) in businessHours.periods" :key="i" class="bh-entry">
+              <div class="bh-time-inputs">
+                <input type="time" v-model="period.open" class="time-input" />
+                <span class="time-sep">至</span>
+                <input type="time" v-model="period.close" class="time-input" />
+              </div>
+              <button type="button" class="bh-remove-btn" @click="removeBusinessHoursEntry(i)">
+                <Trash2 :size="14" />
+              </button>
+            </div>
+            <button type="button" class="btn btn-secondary bh-add-btn" @click="addBusinessHoursEntry">
+              <Plus :size="14" />
+              添加时段
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>餐厅简介</label>
+          <textarea
+            v-model="restaurantSettings.restaurant_description"
+            placeholder="请输入餐厅简介"
+            rows="3"
+            class="settings-textarea"
+          ></textarea>
+        </div>
+        <div class="form-group">
+          <label>特色标签</label>
+          <div class="tag-add-row">
+            <input
+              v-model="newFeature"
+              type="text"
+              placeholder="输入标签名称"
+              @keydown.enter="addFeature"
+            />
+            <button type="button" class="btn btn-secondary tag-add-btn" @click="addFeature">
+              <Plus :size="14" />
+              添加
+            </button>
+          </div>
+          <div class="tag-pills">
+            <span v-for="(tag, i) in featuresList" :key="i" class="tag-pill">
+              {{ tag }}
+              <button type="button" @click="removeFeature(i)"><X :size="12" /></button>
+            </span>
+          </div>
         </div>
         <div class="form-actions">
           <button
@@ -523,6 +649,10 @@ async function handleImport() {
               <span>订单数量</span>
               <span>{{ importPreview.counts.orders }}</span>
             </div>
+            <div class="stat-item" v-if="importPreview.counts.users">
+              <span>用户数量</span>
+              <span>{{ importPreview.counts.users }}</span>
+            </div>
             <div class="stat-item" v-if="importPreview.counts.inventory">
               <span>库存记录</span>
               <span>{{ importPreview.counts.inventory }}</span>
@@ -619,10 +749,183 @@ async function handleImport() {
   color: var(--color-text-primary);
 }
 
+.settings-textarea {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  resize: vertical;
+  font-family: var(--font-body);
+  line-height: 1.6;
+}
+
 .save-btn {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
+}
+
+/* 营业时间条目 */
+.bh-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.bh-days-header {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.bh-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.day-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.day-chip {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.day-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.day-chip-active {
+  background-color: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.day-chip-active:hover {
+  background-color: var(--color-primary-hover, #c53030);
+  color: white;
+}
+
+.bh-time-inputs {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.time-input {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+}
+
+.time-sep {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.bh-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-error);
+  cursor: pointer;
+}
+
+.bh-remove-btn:hover {
+  background-color: var(--color-error-bg, rgba(239, 68, 68, 0.1));
+}
+
+.bh-add-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  align-self: flex-end;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.8rem;
+}
+
+/* 特色标签 */
+.tag-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+
+.tag-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background-color: rgba(220, 38, 38, 0.08);
+  color: var(--color-primary);
+  font-size: 0.8rem;
+}
+
+:global([data-theme="dark"]) .tag-pill {
+  background-color: rgba(220, 38, 38, 0.15);
+}
+
+.tag-pill button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.6;
+}
+
+.tag-pill button:hover {
+  opacity: 1;
+}
+
+.tag-add-row {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.tag-add-row input {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+.tag-add-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: 0.85rem;
 }
 
 .form-actions {

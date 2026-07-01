@@ -1,11 +1,12 @@
 import { Router, type Request, type Response, type NextFunction } from 'express'
-import { all, get, run } from '../db/index.js'
+import { all, get, run, beginBatch, endBatch } from '../db/index.js'
 import { v4 as uuidv4 } from 'uuid'
 import { formatDateTime } from '../utils/format.js'
 import { createOrderSchema, cancelOrderSchema, updateOrderItemsSchema } from '../validators/index.js'
 import { broadcastSSE } from '../utils/sse.js'
 import jwt from 'jsonwebtoken'
 import { JWT_SECRET } from '../utils/jwt.js'
+import { cacheInvalidate, CACHE_KEYS } from '../utils/cache.js'
 
 const CLIENT_COOKIE_NAME = 'client_token'
 
@@ -181,8 +182,9 @@ ordersRouter.get('/:id', requireClientAuth, (req, res) => {
     }
     
     const items = all('SELECT * FROM order_items WHERE order_id = ?', [id])
+    const modifications = all('SELECT * FROM order_modifications WHERE order_id = ? ORDER BY created_at ASC', [id])
     
-    res.json({ success: true, data: { ...order, items } })
+    res.json({ success: true, data: { ...order, items, modifications } })
   } catch (error) {
     console.error('Error fetching order:', error)
     res.status(500).json({ success: false, error: 'Failed to fetch order' })
@@ -237,7 +239,18 @@ ordersRouter.post('/', requireClientAuth, (req, res) => {
     const orderId = uuidv4()
     const orderNo = generateOrderNo()
     
-    // 服务端重新验证菜品并计算价格，防止客户端篡改金额
+    // 服务端批量验证菜品并计算价格，防止客户端篡改金额
+    const dishIds = items.map(i => i.dish_id)
+    const placeholders = dishIds.map(() => '?').join(',')
+    const dishRows = all<{ id: string; name: string; price: number; status: string }>(
+      `SELECT id, name, price, status FROM dishes WHERE id IN (${placeholders})`,
+      dishIds
+    )
+    const dishMap = new Map<string, { id: string; name: string; price: number; status: string }>()
+    for (const d of dishRows) {
+      dishMap.set(d.id, d)
+    }
+
     const verifiedItems: {
       dish_id: string
       dish_name: string
@@ -248,9 +261,7 @@ ordersRouter.post('/', requireClientAuth, (req, res) => {
     }[] = []
     
     for (const item of items) {
-      const dish = get<{ id: string; name: string; price: number; status: string }>(
-        'SELECT id, name, price, status FROM dishes WHERE id = ?', [item.dish_id]
-      )
+      const dish = dishMap.get(item.dish_id)
       
       if (!dish) {
         return res.status(400).json({
@@ -282,23 +293,33 @@ ordersRouter.post('/', requireClientAuth, (req, res) => {
     
     const totalAmount = Math.round(verifiedItems.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100
     
-    // Insert order
-    run(`
-      INSERT INTO orders (id, order_no, table_id, user_id, dining_time, contact_name, contact_phone, total_amount, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `, [orderId, orderNo, table_id || null, (req as any).clientUserId, dining_time, contact_name, contact_phone, totalAmount])
-    
-    // Insert order items (使用服务端验证后的价格)
-    for (const item of verifiedItems) {
+    // 批量写入：订单 + 订单项 + 桌位状态更新
+    beginBatch()
+    try {
+      // Insert order
       run(`
-        INSERT INTO order_items (id, order_id, dish_id, dish_name, quantity, unit_price, subtotal, spec)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [uuidv4(), orderId, item.dish_id, item.dish_name, item.quantity, item.unit_price, item.subtotal, item.spec])
+        INSERT INTO orders (id, order_no, table_id, user_id, dining_time, contact_name, contact_phone, total_amount, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      `, [orderId, orderNo, table_id || null, (req as any).clientUserId, dining_time, contact_name, contact_phone, totalAmount])
+      
+      // Insert order items (使用服务端验证后的价格)
+      for (const item of verifiedItems) {
+        run(`
+          INSERT INTO order_items (id, order_id, dish_id, dish_name, quantity, unit_price, subtotal, spec)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [uuidv4(), orderId, item.dish_id, item.dish_name, item.quantity, item.unit_price, item.subtotal, item.spec])
+      }
+      
+      // Update table status
+      if (table_id) {
+        run('UPDATE tables SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['reserved', table_id])
+      }
+    } finally {
+      endBatch()
     }
-    
-    // Update table status
+
     if (table_id) {
-      run('UPDATE tables SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['reserved', table_id])
+      cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
     }
     
     // Get the created order
@@ -384,6 +405,7 @@ ordersRouter.post('/:id/cancel', requireClientAuth, (req, res) => {
     
     if (order.table_id) {
       run('UPDATE tables SET status = \'available\', updated_at = CURRENT_TIMESTAMP WHERE id = ?', [order.table_id])
+      cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
     }
     
     // SSE 广播订单取消事件
@@ -396,7 +418,7 @@ ordersRouter.post('/:id/cancel', requireClientAuth, (req, res) => {
   }
 })
 
-// Update order items (加菜)
+// Update order items (修改订单)
 ordersRouter.put('/:id/items', requireClientAuth, (req, res) => {
   try {
     const id = req.params.id as string
@@ -421,15 +443,26 @@ ordersRouter.put('/:id/items', requireClientAuth, (req, res) => {
       return res.status(404).json({ success: false, error: '订单不存在' })
     }
     
-    // 只有 pending 或 confirmed 状态的订单可以加菜
+    // 只有 pending 或 confirmed 状态的订单可以修改
     if (order.status !== 'pending' && order.status !== 'confirmed') {
       return res.status(400).json({
         success: false,
-        error: '该订单状态无法加菜'
+        error: '该订单状态无法修改'
       })
     }
     
-    // 服务端重新验证菜品并计算价格
+    // 服务端批量验证菜品并计算价格
+    const dishIds = items.map(i => i.dish_id)
+    const dishPlaceholders = dishIds.map(() => '?').join(',')
+    const dishRows = all<{ id: string; name: string; price: number; status: string }>(
+      `SELECT id, name, price, status FROM dishes WHERE id IN (${dishPlaceholders})`,
+      dishIds
+    )
+    const dishMap = new Map<string, { id: string; name: string; price: number; status: string }>()
+    for (const d of dishRows) {
+      dishMap.set(d.id, d)
+    }
+
     const verifiedItems: {
       dish_id: string
       dish_name: string
@@ -440,9 +473,7 @@ ordersRouter.put('/:id/items', requireClientAuth, (req, res) => {
     }[] = []
     
     for (const item of items) {
-      const dish = get<{ id: string; name: string; price: number; status: string }>(
-        'SELECT id, name, price, status FROM dishes WHERE id = ?', [item.dish_id]
-      )
+      const dish = dishMap.get(item.dish_id)
       
       if (!dish) {
         return res.status(400).json({
@@ -473,19 +504,93 @@ ordersRouter.put('/:id/items', requireClientAuth, (req, res) => {
     
     const totalAmount = Math.round(verifiedItems.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100
     
-    // 删除原订单的所有菜品项
-    run('DELETE FROM order_items WHERE order_id = ?', [id])
+    // 读取当前订单菜品（用于计算 diff）
+    const oldItems = all<{ dish_id: string; quantity: number; unit_price: number; spec: string | null }>(
+      'SELECT dish_id, quantity, unit_price, spec FROM order_items WHERE order_id = ?', [id]
+    )
     
-    // 插入新的菜品项
-    for (const item of verifiedItems) {
-      run(`
-        INSERT INTO order_items (id, order_id, dish_id, dish_name, quantity, unit_price, subtotal, spec)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [uuidv4(), id, item.dish_id, item.dish_name, item.quantity, item.unit_price, item.subtotal, item.spec])
+    // 计算 diff：对比初始订单与当前修改
+    const oldMap = new Map<string, { quantity: number; unit_price: number }>()
+    for (const item of oldItems) {
+      const key = `${item.dish_id}|${item.spec || ''}`
+      oldMap.set(key, { quantity: item.quantity, unit_price: item.unit_price })
     }
     
-    // 更新订单总金额，重置状态为 pending（即使原来是 confirmed 也需重新确认）
-    run('UPDATE orders SET total_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [totalAmount, 'pending', id])
+    const newMap = new Map<string, { dish_id: string; dish_name: string; quantity: number; unit_price: number; spec: string | null }>()
+    for (const item of verifiedItems) {
+      const key = `${item.dish_id}|${item.spec || ''}`
+      newMap.set(key, item)
+    }
+    
+    const diffRecords: { dish_id: string; dish_name: string; quantity_delta: number; unit_price: number; spec: string | null }[] = []
+    
+    // 新增或数量增加的菜品
+    for (const [key, newItem] of newMap) {
+      const oldItem = oldMap.get(key)
+      const delta = oldItem ? newItem.quantity - oldItem.quantity : newItem.quantity
+      if (delta !== 0) {
+        diffRecords.push({
+          dish_id: newItem.dish_id,
+          dish_name: newItem.dish_name,
+          quantity_delta: delta,
+          unit_price: newItem.unit_price,
+          spec: newItem.spec
+        })
+      }
+    }
+    
+    // 删减或移除的菜品
+    for (const [key, oldItem] of oldMap) {
+      if (!newMap.has(key)) {
+        const oldFullItem = oldItems.find(i => `${i.dish_id}|${i.spec || ''}` === key)
+        diffRecords.push({
+          dish_id: oldFullItem!.dish_id,
+          dish_name: '',  // 旧记录没有 dish_name，需要从数据库获取
+          quantity_delta: -oldFullItem!.quantity,
+          unit_price: oldFullItem!.unit_price,
+          spec: oldFullItem!.spec
+        })
+      }
+    }
+    
+    // 若 diff 为空，说明菜品没有任何改动，拒绝无意义的更新
+    if (diffRecords.length === 0) {
+      return res.status(400).json({ success: false, error: '订单内容未发生任何变化，无需修改' })
+    }
+    
+    // 批量写入：删除旧项 + 插入新项 + 记录 diff + 更新订单
+    beginBatch()
+    try {
+      // 删除原订单的所有菜品项
+      run('DELETE FROM order_items WHERE order_id = ?', [id])
+      
+      // 插入新的菜品项
+      for (const item of verifiedItems) {
+        run(`
+          INSERT INTO order_items (id, order_id, dish_id, dish_name, quantity, unit_price, subtotal, spec)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [uuidv4(), id, item.dish_id, item.dish_name, item.quantity, item.unit_price, item.subtotal, item.spec])
+      }
+      
+      // 写入修改记录（diff）
+      for (const diff of diffRecords) {
+        // 对于被移除的菜品，尝试从数据库获取菜名
+        let dishName = diff.dish_name
+        if (!dishName) {
+          const dish = get<{ name: string }>('SELECT name FROM dishes WHERE id = ?', [diff.dish_id])
+          dishName = dish?.name || '未知菜品'
+        }
+        run(`
+          INSERT INTO order_modifications (id, order_id, dish_id, dish_name, quantity_delta, unit_price, spec)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [uuidv4(), id, diff.dish_id, dishName, diff.quantity_delta, diff.unit_price, diff.spec])
+      }
+      
+      // 更新订单总金额，重置状态为 pending（即使原来是 confirmed 也需重新确认）
+      run('UPDATE orders SET total_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [totalAmount, 'pending', id])
+    } finally {
+      endBatch()
+    }
     
     // 获取更新后的订单
     const updatedOrder = get<{
@@ -494,6 +599,7 @@ ordersRouter.put('/:id/items', requireClientAuth, (req, res) => {
       table_id: string | null
       table_name: string | null
       table_no: string | null
+      updated_at: string
     }>(`
       SELECT o.*, t.name as table_name, t.table_no
       FROM orders o
@@ -506,7 +612,12 @@ ordersRouter.put('/:id/items', requireClientAuth, (req, res) => {
     const result = { ...updatedOrder, items: orderItems }
     
     // SSE 广播订单更新事件，通知管理端重新确认
-    broadcastSSE('order_updated', { id, status: 'pending', type: 'add_items' })
+    broadcastSSE('order_updated', {
+      id,
+      status: 'pending',
+      type: 'add_items',
+      updated_at: updatedOrder?.updated_at
+    })
     
     res.json({ success: true, data: result })
   } catch (error) {

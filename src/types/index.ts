@@ -54,7 +54,7 @@ export interface Category {
 export interface Dish {
   id: string
   name: string
-  price: number
+  price: number | string
   image_url: string | null
   category_id: string | null
   category_name: string | null
@@ -79,6 +79,17 @@ export interface OrderItem {
   spec: string | null
 }
 
+export interface OrderModification {
+  id: string
+  order_id: string
+  dish_id: string
+  dish_name: string
+  quantity_delta: number
+  unit_price: number
+  spec: string | null
+  created_at: string
+}
+
 export interface Order {
   id: string
   order_no: string
@@ -94,6 +105,7 @@ export interface Order {
   created_at: string
   updated_at: string
   items: OrderItem[]
+  modifications?: OrderModification[]
 }
 
 // Inventory Types

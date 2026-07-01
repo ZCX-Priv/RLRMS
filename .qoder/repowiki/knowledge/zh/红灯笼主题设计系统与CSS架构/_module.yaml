@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend_style
+title: 红灯笼主题设计系统与CSS架构
+scope: []
+source_files:
+    - src/style.css
+    - src/stores/app.ts
+    - index.html
+    - vite.config.ts
+depends_on: []
+related_to: []

@@ -8,12 +8,13 @@ import { resolve, extname, normalize } from 'path'
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync, createReadStream } from 'fs'
 import bcrypt from 'bcryptjs'
 import { formatDateTime } from '../utils/format.js'
-import { createDishSchema, updateDishSchema, createTableSchema, createCategorySchema, createInventorySchema, updateInventorySchema, updateOrderStatusSchema, confirmResetSchema, createUserSchema, updateUserSchema } from '../validators/index.js'
+import { createDishSchema, updateDishSchema, createTableSchema, createCategorySchema, createInventorySchema, updateInventorySchema, updateOrderStatusSchema, confirmResetSchema, clearOrdersSchema, createUserSchema, updateUserSchema } from '../validators/index.js'
 import sharp from 'sharp'
 import AdmZip from 'adm-zip'
 import archiver from 'archiver'
 import { addSSEClient, removeSSEClient, broadcastSSE } from '../utils/sse.js'
 import { JWT_SECRET } from '../utils/jwt.js'
+import { cacheGet, cacheSet, cacheInvalidate, cacheInvalidatePrefix, cacheClear, CACHE_KEYS } from '../utils/cache.js'
 
 function safeJsonParse<T>(jsonString: string | null | undefined, defaultValue: T): T {
   if (!jsonString) return defaultValue
@@ -163,10 +164,20 @@ adminRouter.get('/events', requireAuth, (req: Request, res: Response) => {
 // Dashboard stats
 adminRouter.get('/dashboard', requireAuth, (req, res) => {
   try {
-    const todayOrders = get<{ count: number }>('SELECT COUNT(*) as count FROM orders WHERE date(created_at, \'localtime\') = date(\'now\', \'localtime\')')
-    const todayRevenue = get<{ total: number }>('SELECT COALESCE(SUM(total_amount), 0) as total FROM orders WHERE date(created_at, \'localtime\') = date(\'now\', \'localtime\') AND status = \'completed\'')
-    const pendingOrders = get<{ count: number }>('SELECT COUNT(*) as count FROM orders WHERE status = \'pending\'')
-    const availableTables = get<{ count: number }>('SELECT COUNT(*) as count FROM tables WHERE status = \'available\'')
+    // 合并统计查询为单条 SQL
+    const stats = get<{
+      todayOrders: number
+      todayRevenue: number
+      pendingOrders: number
+      availableTables: number
+    }>(`
+      SELECT
+        (SELECT COUNT(*) FROM orders WHERE date(created_at, 'localtime') = date('now', 'localtime')) as todayOrders,
+        (SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status = 'completed') as todayRevenue,
+        (SELECT COUNT(*) FROM orders WHERE status = 'pending') as pendingOrders,
+        (SELECT COUNT(*) FROM tables WHERE status = 'available') as availableTables
+    `)
+
     const recentOrders = all<{
       id: string
       order_no: string
@@ -194,10 +205,10 @@ adminRouter.get('/dashboard', requireAuth, (req, res) => {
     res.json({
       success: true,
       data: {
-        todayOrders: todayOrders?.count || 0,
-        todayRevenue: todayRevenue?.total || 0,
-        pendingOrders: pendingOrders?.count || 0,
-        availableTables: availableTables?.count || 0,
+        todayOrders: stats?.todayOrders || 0,
+        todayRevenue: stats?.todayRevenue || 0,
+        pendingOrders: stats?.pendingOrders || 0,
+        availableTables: stats?.availableTables || 0,
         recentOrders: formattedOrders
       }
     })
@@ -245,10 +256,12 @@ adminRouter.put('/tables/:id', requireAuth, (req, res) => {
         WHERE id = ?
       `, [table_no ?? null, name ?? null, capacity ?? null, status ?? null, id])
       
+      cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
       const table = get('SELECT * FROM tables WHERE id = ?', [id])
       res.json({ success: true, data: table })
     } else {
       run('UPDATE tables SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, id])
+      cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
       res.json({ success: true, message: 'Table status updated' })
     }
   } catch (error) {
@@ -283,6 +296,7 @@ adminRouter.post('/tables', requireAuth, (req, res) => {
     const id = uuidv4()
     run('INSERT INTO tables (id, table_no, name, capacity) VALUES (?, ?, ?, ?)', [id, table_no, name, capacity || 4])
     
+    cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
     const table = get('SELECT * FROM tables WHERE id = ?', [id])
     res.status(201).json({ success: true, data: table })
   } catch (error) {
@@ -314,6 +328,7 @@ adminRouter.delete('/tables/:id', requireAuth, (req, res) => {
     }
     
     run('DELETE FROM tables WHERE id = ?', [id])
+    cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
     res.json({ success: true, message: 'Table deleted' })
   } catch (error) {
     console.error('Error deleting table:', error)
@@ -380,6 +395,8 @@ adminRouter.post('/dishes', requireAuth, (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [id, name, price, category_id || null, description || '', JSON.stringify(tags || []), JSON.stringify(specs || []), image_url || null])
     
+    cacheInvalidate(CACHE_KEYS.DISHES_HOME)
+    cacheInvalidate(CACHE_KEYS.DISHES_LIST)
     const dish = get<{
       id: string
       name: string
@@ -427,6 +444,8 @@ adminRouter.put('/dishes/reorder', requireAuth, (req, res) => {
     }
     endBatch()
     
+    cacheInvalidate(CACHE_KEYS.DISHES_HOME)
+    cacheInvalidate(CACHE_KEYS.DISHES_LIST)
     res.json({ success: true, message: 'Dishes reordered' })
   } catch (error) {
     console.error('Error reordering dishes:', error)
@@ -467,6 +486,8 @@ adminRouter.put('/dishes/:id', requireAuth, (req, res) => {
       deleteDishImageIfUnused(oldImageUrl)
     }
     
+    cacheInvalidate(CACHE_KEYS.DISHES_HOME)
+    cacheInvalidate(CACHE_KEYS.DISHES_LIST)
     const dish = get<{
       id: string
       name: string
@@ -515,6 +536,8 @@ adminRouter.delete('/dishes/:id', requireAuth, (req, res) => {
       deleteDishImageIfUnused(imageUrl)
     }
     
+    cacheInvalidate(CACHE_KEYS.DISHES_HOME)
+    cacheInvalidate(CACHE_KEYS.DISHES_LIST)
     res.json({ success: true, message: 'Dish deleted' })
   } catch (error) {
     console.error('Error deleting dish:', error)
@@ -559,6 +582,8 @@ adminRouter.post('/categories', requireAuth, (req, res) => {
     const id = uuidv4()
     run('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)', [id, name.trim(), sort_order || 0])
     
+    cacheInvalidate(CACHE_KEYS.CATEGORIES)
+    cacheInvalidate(CACHE_KEYS.DISHES_HOME)
     const category = get('SELECT * FROM categories WHERE id = ?', [id])
     res.status(201).json({ success: true, data: category })
   } catch (error) {
@@ -581,6 +606,8 @@ adminRouter.delete('/categories/:id', requireAuth, (req, res) => {
     }
     
     run('DELETE FROM categories WHERE id = ?', [id])
+    cacheInvalidate(CACHE_KEYS.CATEGORIES)
+    cacheInvalidate(CACHE_KEYS.DISHES_HOME)
     res.json({ success: true, message: 'Category deleted' })
   } catch (error) {
     console.error('Error deleting category:', error)
@@ -602,6 +629,8 @@ adminRouter.put('/categories/reorder', requireAuth, (req, res) => {
     }
     endBatch()
     
+    cacheInvalidate(CACHE_KEYS.CATEGORIES)
+    cacheInvalidate(CACHE_KEYS.DISHES_HOME)
     res.json({ success: true, message: 'Categories reordered' })
   } catch (error) {
     console.error('Error reordering categories:', error)
@@ -679,10 +708,24 @@ adminRouter.get('/orders', requireAuth, (req, res) => {
       }
     }
     
+    // 查询修改记录并按 order_id 分组
+    const allModifications = all<{
+      id: string; order_id: string; dish_id: string; dish_name: string;
+      quantity_delta: number; unit_price: number; spec: string | null; created_at: string
+    }>(`SELECT * FROM order_modifications WHERE order_id IN (${placeholders})`, orderIds)
+    
+    const modsByOrder = new Map<string, typeof allModifications>()
+    for (const mod of allModifications) {
+      const list = modsByOrder.get(mod.order_id)
+      if (list) list.push(mod)
+      else modsByOrder.set(mod.order_id, [mod])
+    }
+    
     const ordersWithItems = orders.map(order => ({
       ...order,
       created_at: formatDateTime(order.created_at),
-      items: itemsByOrder.get(order.id) || []
+      items: itemsByOrder.get(order.id) || [],
+      modifications: modsByOrder.get(order.id) || []
     }))
     
     res.json({ success: true, data: ordersWithItems })
@@ -750,10 +793,24 @@ adminRouter.get('/orders/search', requireAuth, (req, res) => {
       }
     }
     
+    // 查询修改记录并按 order_id 分组
+    const allModifications = all<{
+      id: string; order_id: string; dish_id: string; dish_name: string;
+      quantity_delta: number; unit_price: number; spec: string | null; created_at: string
+    }>(`SELECT * FROM order_modifications WHERE order_id IN (${placeholders})`, orderIds)
+    
+    const modsByOrder = new Map<string, typeof allModifications>()
+    for (const mod of allModifications) {
+      const list = modsByOrder.get(mod.order_id)
+      if (list) list.push(mod)
+      else modsByOrder.set(mod.order_id, [mod])
+    }
+    
     const result = searchOrders.map(order => ({
       ...order,
       created_at: formatDateTime(order.created_at),
-      items: itemsByOrder.get(order.id) || []
+      items: itemsByOrder.get(order.id) || [],
+      modifications: modsByOrder.get(order.id) || []
     }))
     
     res.json({ success: true, data: result })
@@ -790,6 +847,7 @@ adminRouter.put('/orders/:id/status', requireAuth, (req, res) => {
     // If order is completed or cancelled, free the table
     if ((status === 'completed' || status === 'cancelled') && order.table_id) {
       run('UPDATE tables SET status = \'available\', updated_at = CURRENT_TIMESTAMP WHERE id = ?', [order.table_id])
+      cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
     }
     
     // SSE 广播订单状态变更事件
@@ -819,15 +877,17 @@ adminRouter.delete('/orders/:id', requireAuth, (req, res) => {
       return res.status(404).json({ success: false, error: '订单不存在' })
     }
 
-    // 删除关联的订单项和订单记录
+    // 删除关联的订单项、修改记录和订单记录
     beginBatch()
     run('DELETE FROM order_items WHERE order_id = ?', [id])
+    run('DELETE FROM order_modifications WHERE order_id = ?', [id])
     run('DELETE FROM orders WHERE id = ?', [id])
     endBatch()
 
     // 如果订单关联桌位且处于活跃状态，释放桌位
     if (order.table_id && (order.status === 'pending' || order.status === 'confirmed')) {
       run('UPDATE tables SET status = \'available\', updated_at = CURRENT_TIMESTAMP WHERE id = ?', [order.table_id])
+      cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
     }
 
     // SSE 广播订单删除事件
@@ -1113,11 +1173,16 @@ adminRouter.delete('/users/:id', requireAuth, (req, res) => {
 
 adminRouter.get('/settings', requireAuth, (req, res) => {
   try {
+    const cached = cacheGet<Record<string, string>>(CACHE_KEYS.SETTINGS)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
     const settings = all<{ key: string; value: string }>('SELECT key, value FROM settings')
     const settingsMap: Record<string, string> = {}
     for (const s of settings) {
       settingsMap[s.key] = s.value
     }
+    cacheSet(CACHE_KEYS.SETTINGS, settingsMap, 60_000) // 60s TTL
     res.json({ success: true, data: settingsMap })
   } catch (error) {
     console.error('Error fetching settings:', error)
@@ -1134,6 +1199,8 @@ adminRouter.put('/settings', requireAuth, (req, res) => {
         [key, value, value]
       )
     }
+    cacheInvalidate(CACHE_KEYS.SETTINGS)
+    cacheInvalidate(CACHE_KEYS.RESTAURANT_INFO)
     res.json({ success: true, message: 'Settings updated' })
   } catch (error) {
     console.error('Error updating settings:', error)
@@ -1156,6 +1223,7 @@ adminRouter.post('/reset-database', requireAuth, (req, res) => {
     
     beginBatch()
     run('DELETE FROM order_items')
+    run('DELETE FROM order_modifications')
     run('DELETE FROM orders')
     run('DELETE FROM inventory')
     run('DELETE FROM dishes')
@@ -1179,9 +1247,11 @@ adminRouter.post('/reset-database', requireAuth, (req, res) => {
       { key: 'restaurant_name', value: '红灯笼食府' },
       { key: 'restaurant_phone', value: '' },
       { key: 'restaurant_address', value: '' },
-      { key: 'business_hours', value: '11:00-21:00' },
+      { key: 'business_hours', value: '{"days":[1,2,3,4,5,6,7],"periods":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}]}' },
       { key: 'notification_email', value: '' },
       { key: 'notification_phone', value: '' },
+      { key: 'restaurant_description', value: '红灯笼食府秉承传统中餐烹饪技艺，精选时令食材，匠心打造每一道佳肴。我们致力于为宾客提供地道的中华美食体验，温馨舒适的用餐环境，以及贴心周到的服务。' },
+      { key: 'restaurant_features', value: '传统中餐,时令食材,私密包厢,家庭聚餐' },
     ]
     for (const setting of defaultSettings) {
       run(
@@ -1196,6 +1266,7 @@ adminRouter.post('/reset-database', requireAuth, (req, res) => {
       [hashedPassword, '管理员', 'admin']
     )
     
+    cacheClear()
     res.json({ success: true, message: 'Database reset successfully' })
   } catch (error) {
     console.error('Error resetting database:', error)
@@ -1205,14 +1276,80 @@ adminRouter.post('/reset-database', requireAuth, (req, res) => {
 
 // ===== Clear Orders =====
 
+const SCOPE_LABELS: Record<string, string> = {
+  today: '今日',
+  yesterday: '昨日',
+  week: '本周',
+  month: '本月',
+}
+
+function getDateRange(scope: string): { startDate: string; endDate: string } | null {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const fmt = (d: Date) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  if (scope === 'today') {
+    const s = fmt(today)
+    return { startDate: s, endDate: s }
+  } else if (scope === 'yesterday') {
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const s = fmt(yesterday)
+    return { startDate: s, endDate: s }
+  } else if (scope === 'week') {
+    const weekAgo = new Date(today)
+    weekAgo.setDate(weekAgo.getDate() - 7)
+    return { startDate: fmt(weekAgo), endDate: fmt(today) }
+  } else if (scope === 'month') {
+    const monthAgo = new Date(today)
+    monthAgo.setMonth(monthAgo.getMonth() - 1)
+    return { startDate: fmt(monthAgo), endDate: fmt(today) }
+  }
+  return null
+}
+
 adminRouter.post('/clear-orders', requireAuth, (req, res) => {
   try {
+    const parsed = clearOrdersSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.errors[0]?.message || '参数错误' })
+    }
+
+    const { scope } = parsed.data
+    const dateRange = scope ? getDateRange(scope) : null
+    const scopeLabel = scope ? (SCOPE_LABELS[scope] || '') : ''
+
     beginBatch()
-    run("DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('completed', 'cancelled'))")
-    run("DELETE FROM orders WHERE status IN ('completed', 'cancelled')")
+
+    if (dateRange) {
+      run(
+        "DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('completed', 'cancelled') AND created_at >= ? AND created_at < date(?, '+1 day'))",
+        [dateRange.startDate, dateRange.endDate]
+      )
+      run(
+        "DELETE FROM order_modifications WHERE order_id IN (SELECT id FROM orders WHERE status IN ('completed', 'cancelled') AND created_at >= ? AND created_at < date(?, '+1 day'))",
+        [dateRange.startDate, dateRange.endDate]
+      )
+      run(
+        "DELETE FROM orders WHERE status IN ('completed', 'cancelled') AND created_at >= ? AND created_at < date(?, '+1 day')",
+        [dateRange.startDate, dateRange.endDate]
+      )
+    } else {
+      run("DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('completed', 'cancelled'))")
+      run("DELETE FROM order_modifications WHERE order_id IN (SELECT id FROM orders WHERE status IN ('completed', 'cancelled'))")
+      run("DELETE FROM orders WHERE status IN ('completed', 'cancelled')")
+    }
+
     endBatch()
-    
-    res.json({ success: true, message: '已完成和已取消的订单已清空' })
+
+    cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
+    res.json({ success: true, message: `已清空${scopeLabel}所有订单` })
   } catch (error) {
     console.error('Error clearing orders:', error)
     res.status(500).json({ success: false, error: 'Failed to clear orders' })
@@ -1340,13 +1477,15 @@ const uploadZip = multer({
  */
 interface ImportManifest {
   version?: string
-  exportDate?: string
+  exportedAt?: string
   tables?: number
   dishes?: number
   categories?: number
   orders?: number
   inventory?: number
   settings?: number
+  users?: number
+  orderModifications?: number
 }
 
 /**
@@ -1356,6 +1495,7 @@ interface OrderData {
   id: string
   order_no: string
   table_id: string | null
+  user_id?: string | null
   dining_time: string | null
   contact_name: string | null
   contact_phone: string | null
@@ -1375,9 +1515,9 @@ interface OrderItemData {
   dish_id: string
   dish_name: string
   quantity: number
-  price: number
+  unit_price: number
   subtotal: number
-  specs?: string
+  spec?: string
   created_at?: string
 }
 
@@ -1415,7 +1555,9 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
       categories: 0,
       inventory: 0,
       settings: 0,
-      images: 0
+      images: 0,
+      users: 0,
+      orderModifications: 0
     }
 
     // 开始批量操作
@@ -1424,11 +1566,36 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
     try {
       // 清空现有数据（按照外键依赖顺序删除）
       run('DELETE FROM order_items')
+      run('DELETE FROM order_modifications')
       run('DELETE FROM orders')
       run('DELETE FROM inventory')
       run('DELETE FROM dishes')
       run('DELETE FROM categories')
       run('DELETE FROM tables')
+      run('DELETE FROM users')
+
+      // 导入 users
+      const usersEntry = zipEntries.find(entry => entry.entryName === 'data/users.json')
+      if (usersEntry) {
+        const usersContent = usersEntry.getData().toString('utf8')
+        const users = JSON.parse(usersContent)
+        for (const user of users) {
+          run(
+            'INSERT INTO users (id, username, password, role, phone, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              user.id,
+              user.username,
+              user.password,
+              user.role || 'customer',
+              user.phone || null,
+              user.name || null,
+              user.created_at || null,
+              user.updated_at || null
+            ]
+          )
+          stats.users++
+        }
+      }
 
       // 导入 categories
       const categoriesEntry = zipEntries.find(entry => entry.entryName === 'data/categories.json')
@@ -1492,11 +1659,12 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
         const orders: OrderData[] = JSON.parse(ordersContent)
         for (const order of orders) {
           run(
-            'INSERT INTO orders (id, order_no, table_id, dining_time, contact_name, contact_phone, total_amount, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO orders (id, order_no, table_id, user_id, dining_time, contact_name, contact_phone, total_amount, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
               order.id,
               order.order_no,
               order.table_id || null,
+              order.user_id || null,
               order.dining_time || null,
               order.contact_name || null,
               order.contact_phone || null,
@@ -1512,22 +1680,45 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
           if (order.items && Array.isArray(order.items)) {
             for (const item of order.items) {
               run(
-                'INSERT INTO order_items (id, order_id, dish_id, dish_name, quantity, price, subtotal, specs, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO order_items (id, order_id, dish_id, dish_name, quantity, unit_price, subtotal, spec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [
                   item.id,
                   item.order_id,
                   item.dish_id,
                   item.dish_name,
                   item.quantity,
-                  item.price,
+                  item.unit_price,
                   item.subtotal,
-                  item.specs || null,
+                  item.spec || null,
                   item.created_at || null
                 ]
               )
               stats.orderItems++
             }
           }
+        }
+      }
+
+      // 导入 order_modifications
+      const orderModsEntry = zipEntries.find(entry => entry.entryName === 'data/order_modifications.json')
+      if (orderModsEntry) {
+        const orderModsContent = orderModsEntry.getData().toString('utf8')
+        const orderMods = JSON.parse(orderModsContent)
+        for (const mod of orderMods) {
+          run(
+            'INSERT INTO order_modifications (id, order_id, dish_id, dish_name, quantity_delta, unit_price, spec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              mod.id,
+              mod.order_id,
+              mod.dish_id,
+              mod.dish_name,
+              mod.quantity_delta,
+              mod.unit_price,
+              mod.spec || null,
+              mod.created_at || null
+            ]
+          )
+          stats.orderModifications++
         }
       }
 
@@ -1570,6 +1761,9 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
 
       // 结束批量操作
       endBatch()
+
+      // 导入完成后清除所有缓存
+      cacheClear()
 
       // 解压 sources/ 目录下的图片到 public/sources
       const sourceImages = zipEntries.filter(entry => 
@@ -1615,7 +1809,7 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
         data: {
           manifest: {
             version: manifest.version,
-            exportDate: manifest.exportDate
+            exportedAt: manifest.exportedAt
           },
           stats
         }
@@ -1638,14 +1832,16 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
 
 /**
  * 数据导出端点
- * 导出所有业务数据（订单、桌位、菜品、分类、库存、设置）和图片资源
+ * 导出所有业务数据（用户、订单、桌位、菜品、分类、库存、设置、订单修改记录）和图片资源
  * 生成 ZIP 文件供下载
  */
 adminRouter.get('/export', requireAuth, (req, res) => {
   try {
     // 1. 收集所有数据
+    const users = all('SELECT * FROM users ORDER BY created_at ASC')
     const orders = all<{ id: string }>('SELECT * FROM orders ORDER BY created_at DESC')
     const orderItems = all<{ order_id: string }>('SELECT * FROM order_items ORDER BY order_id, created_at')
+    const orderModifications = all('SELECT * FROM order_modifications ORDER BY order_id, created_at')
     const tables = all('SELECT * FROM tables ORDER BY table_no')
     const dishes = all('SELECT * FROM dishes ORDER BY created_at DESC')
     const categories = all('SELECT * FROM categories ORDER BY sort_order')
@@ -1669,8 +1865,10 @@ adminRouter.get('/export', requireAuth, (req, res) => {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       counts: {
+        users: users.length,
         orders: orders.length,
         orderItems: orderItems.length,
+        orderModifications: orderModifications.length,
         tables: tables.length,
         dishes: dishes.length,
         categories: categories.length,
@@ -1713,7 +1911,9 @@ adminRouter.get('/export', requireAuth, (req, res) => {
 
     // 7. 添加数据文件到 ZIP
     archive.append(JSON.stringify(manifest, null, 2), { name: 'data/manifest.json' })
+    archive.append(JSON.stringify(users, null, 2), { name: 'data/users.json' })
     archive.append(JSON.stringify(ordersWithItems, null, 2), { name: 'data/orders.json' })
+    archive.append(JSON.stringify(orderModifications, null, 2), { name: 'data/order_modifications.json' })
     archive.append(JSON.stringify(tables, null, 2), { name: 'data/tables.json' })
     archive.append(JSON.stringify(dishes, null, 2), { name: 'data/dishes.json' })
     archive.append(JSON.stringify(categories, null, 2), { name: 'data/categories.json' })
@@ -1788,6 +1988,8 @@ adminRouter.post('/debug/query', requireAuth, (req, res) => {
       const changes = database.getRowsModified()
       // 非 SELECT 操作也需要保存到文件
       saveDatabase()
+      // 调试 SQL 可能修改任意数据，清除全部缓存
+      cacheClear()
 
       res.json({ success: true, data: { columns: [], rows: [], changes } })
     }

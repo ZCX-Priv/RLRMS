@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, defineAsyncComponent } from 'vue'
 import type { Dish } from '@/types'
+import { formatPrice } from '@/utils/format'
 import { useCartStore } from '@/stores/cart'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
 import { Plus } from 'lucide-vue-next'
@@ -120,7 +121,7 @@ function handleUpdateQuantity(quantity: number) {
     <div class="dish-info">
       <h3 class="dish-name">{{ dish.name }}</h3>
       <div class="dish-price-row">
-        <span class="dish-price">{{ dish.price }}元</span>
+        <span class="dish-price">{{ formatPrice(dish.price) }}</span>
         <div class="quantity-wrapper" @click.stop>
           <div
             v-if="quantityInCart === 0"

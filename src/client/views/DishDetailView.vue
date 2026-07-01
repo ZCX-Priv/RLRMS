@@ -5,6 +5,7 @@ import { api } from '@/api'
 import { useCartStore } from '@/stores/cart'
 import { useAppStore } from '@/stores/app'
 import type { Dish } from '@/types'
+import { formatPrice } from '@/utils/format'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
 
@@ -129,7 +130,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="dish-price">{{ dish.price }}元</div>
+          <div class="dish-price">{{ formatPrice(dish.price) }}</div>
 
           <div class="dish-description" v-if="dish.description">
             <h3>简介</h3>
@@ -219,7 +220,7 @@ onMounted(() => {
 
 .back-btn {
   position: absolute;
-  left: var(--spacing-lg);
+  left: 0;
   display: flex;
   align-items: center;
   justify-content: center;

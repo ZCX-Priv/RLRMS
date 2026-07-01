@@ -36,6 +36,10 @@ export default defineConfig(({ mode }) => ({
       '@': resolve(__dirname, 'src'),
     },
   },
+  // 预构建常用依赖以加速开发模式
+  optimizeDeps: {
+    include: ['vue', 'vue-router', 'pinia', 'lucide-vue-next'],
+  },
   server: {
     // 端口由 Express 统一控制（Vite 中间件模式）
     // 此配置仅在独立运行 Vite 时生效（如 Trae IDE 预览）
@@ -61,20 +65,14 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       output: {
         // 手动分割 chunks
-        manualChunks: (id) => {
-          // Vue 核心库分离到 vendor chunk
-          if (id.includes('node_modules/vue/') ||
-              id.includes('node_modules/vue-router/') ||
-              id.includes('node_modules/pinia/')) {
-            return 'vendor'
-          }
-          // lucide-vue-next 分离到独立 chunk
+        manualChunks(id) {
+          // lucide-vue-next 图标库（独立 chunk 便于 tree-shaking）
           if (id.includes('node_modules/lucide-vue-next/')) {
-            return 'lucide'
+            return 'vendor-icons'
           }
-          // 其他 node_modules 依赖
+          // Vue 生态 + 所有依赖合并为 vendor（避免循环依赖）
           if (id.includes('node_modules/')) {
-            return 'dependencies'
+            return 'vendor'
           }
         },
         // 资源文件名使用内容哈希
@@ -102,8 +100,8 @@ export default defineConfig(({ mode }) => ({
     },
     // CSS 代码分割
     cssCodeSplit: true,
-    // chunk 大小警告限制为 200KB（适应 3M 带宽）
-    chunkSizeWarningLimit: 200,
+    // chunk 大小警告限制（适应 3M 带宽，gzip 后约 175KB）
+    chunkSizeWarningLimit: 600,
     // 启用 minify
     minify: 'esbuild',
     // 启用 source map（生产环境可关闭以减小体积）

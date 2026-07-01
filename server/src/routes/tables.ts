@@ -1,7 +1,14 @@
 import { Router } from 'express'
 import { all, get } from '../db/index.js'
+import { cacheGet, cacheSet, cacheInvalidate, CACHE_KEYS } from '../utils/cache.js'
 
 export const tablesRouter = Router()
+
+// 导出缓存失效函数
+export function invalidateTablesCache() {
+  cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE)
+  cacheInvalidate(CACHE_KEYS.TABLES_AVAILABLE_FOR_PREFIX)
+}
 
 // Get all tables
 tablesRouter.get('/', (req, res) => {
@@ -22,6 +29,12 @@ tablesRouter.get('/available-for', (req, res) => {
       return res.status(400).json({ success: false, error: '请提供就餐时间参数' })
     }
     
+    const cacheKey = `${CACHE_KEYS.TABLES_AVAILABLE_FOR_PREFIX}${dining_time}`
+    const cached = cacheGet(cacheKey)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
+
     // 返回：status=available 的桌位，以及 status=reserved 但该桌位当前活跃订单的 dining_time 不等于目标时段的桌位
     const tables = all(`
       SELECT t.* FROM tables t
@@ -33,6 +46,7 @@ tablesRouter.get('/available-for', (req, res) => {
       ORDER BY t.table_no
     `, [dining_time])
     
+    cacheSet(cacheKey, tables, 5000) // 5 second TTL for table availability
     res.json({ success: true, data: tables })
   } catch (error) {
     console.error('Error fetching available tables for dining time:', error)
@@ -43,11 +57,17 @@ tablesRouter.get('/available-for', (req, res) => {
 // Get available tables
 tablesRouter.get('/available', (req, res) => {
   try {
+    const cached = cacheGet(CACHE_KEYS.TABLES_AVAILABLE)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
+
     const tables = all(`
       SELECT * FROM tables 
       WHERE status = 'available' 
       ORDER BY table_no
     `)
+    cacheSet(CACHE_KEYS.TABLES_AVAILABLE, tables, 5000) // 5 second TTL
     res.json({ success: true, data: tables })
   } catch (error) {
     console.error('Error fetching available tables:', error)

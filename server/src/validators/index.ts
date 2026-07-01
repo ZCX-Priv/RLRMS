@@ -20,7 +20,7 @@ export const createOrderSchema = z.object({
 
 export const createDishSchema = z.object({
   name: z.string().min(1, '菜品名称不能为空').max(100),
-  price: z.number().nonnegative('价格不能为负数'),
+  price: z.union([z.number().nonnegative('价格不能为负数'), z.string().min(1, '价格不能为空')]),
   category_id: z.string().uuid().optional().nullable(),
   description: z.string().max(500).optional(),
   tags: z.array(z.string()).optional(),
@@ -30,7 +30,7 @@ export const createDishSchema = z.object({
 
 export const updateDishSchema = z.object({
   name: z.string().min(1, '菜品名称不能为空').max(100).optional(),
-  price: z.number().nonnegative('价格不能为负数').optional(),
+  price: z.union([z.number().nonnegative('价格不能为负数'), z.string().min(1, '价格不能为空')]).optional(),
   category_id: z.string().uuid().optional().nullable(),
   description: z.string().max(500).optional(),
   tags: z.array(z.string()).optional(),
@@ -80,7 +80,7 @@ export const cancelOrderSchema = z.object({
   phone: z.string().regex(phoneRegex, '请输入有效的手机号码以验证身份')
 })
 
-// 加菜验证（复用 createOrderSchema 的 items 部分）
+// 修改订单验证（复用 createOrderSchema 的 items 部分）
 export const updateOrderItemsSchema = z.object({
   items: z.array(z.object({
     dish_id: z.string().uuid(),
@@ -90,6 +90,13 @@ export const updateOrderItemsSchema = z.object({
     subtotal: z.number().nonnegative(),
     spec: z.string().optional().nullable()
   })).min(1, '购物车不能为空')
+})
+
+// 清空订单验证（可选时间范围）
+export const clearOrdersSchema = z.object({
+  scope: z.enum(['today', 'yesterday', 'week', 'month'], {
+    errorMap: () => ({ message: '无效的清空范围' })
+  }).optional()
 })
 
 // 用户管理验证
@@ -118,5 +125,6 @@ export type UpdateInventoryInput = z.infer<typeof updateInventorySchema>
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>
 export type UpdateOrderItemsInput = z.infer<typeof updateOrderItemsSchema>
+export type ClearOrdersInput = z.infer<typeof clearOrdersSchema>
 export type CreateUserInput = z.infer<typeof createUserSchema>
 export type UpdateUserInput = z.infer<typeof updateUserSchema>

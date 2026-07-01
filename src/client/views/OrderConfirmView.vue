@@ -8,6 +8,7 @@ import { useTableStore } from '@/stores/table'
 import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
 import type { Table } from '@/types'
+import { formatPrice } from '@/utils/format'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
 
@@ -183,7 +184,17 @@ async function handleSubmit() {
     progressStep.value = 0
 
     if (isAddDishMode.value && cartStore.addDishOrderId) {
-      // 加菜模式：调用更新接口
+      // 提交前校验订单是否仍然活跃
+      const checkRes = await api.getOrder(cartStore.addDishOrderId)
+      if (checkRes.data.status === 'completed' || checkRes.data.status === 'cancelled') {
+        showProgressModal.value = false
+        submitting.value = false
+        cartStore.clearCart()
+        appStore.showToast(checkRes.data.status === 'completed' ? '订单已完成，无法修改' : '订单已取消', 'info')
+        router.push('/')
+        return
+      }
+      // 修改订单模式：调用更新接口
       const res = await api.updateOrderItems(cartStore.addDishOrderId, cartStore.getOrderItems())
 
       progressStep.value = 1
@@ -224,7 +235,7 @@ async function handleSubmit() {
   } catch (error) {
     console.error('Failed to submit order:', error)
     showProgressModal.value = false
-    appStore.showToast(isAddDishMode.value ? '加菜失败，请重试' : '下单失败，请重试', 'error')
+    appStore.showToast(isAddDishMode.value ? '修改失败，请重试' : '下单失败，请重试', 'error')
   } finally {
     submitting.value = false
   }
@@ -239,7 +250,7 @@ async function handleSubmit() {
         <button class="back-btn" @click="router.back()">
           <ArrowLeft :size="20" />
         </button>
-        <h1>{{ isAddDishMode ? '加菜确认' : '确认订单' }}</h1>
+        <h1>{{ isAddDishMode ? '修改订单' : '确认订单' }}</h1>
       </header>
 
       <!-- Content -->
@@ -334,7 +345,7 @@ async function handleSubmit() {
                 <span v-if="item.spec" class="item-spec">{{ item.spec }}</span>
               </div>
               <div class="item-right">
-                <span class="item-price">{{ item.dish.price }}元</span>
+                <span class="item-price">{{ formatPrice(item.dish.price) }}</span>
                 <QuantityControl
                   :model-value="item.quantity"
                   size="sm"
@@ -400,7 +411,7 @@ async function handleSubmit() {
           :disabled="!canSubmit || submitting"
           @click="handleSubmit"
         >
-          {{ submitting ? '提交中...' : (isAddDishMode ? '提交加菜' : '下单') }}
+          {{ submitting ? '提交中...' : (isAddDishMode ? '提交修改' : '下单') }}
         </button>
       </div>
 
@@ -453,7 +464,7 @@ async function handleSubmit() {
 
 .back-btn {
   position: absolute;
-  left: var(--spacing-lg);
+  left: 0;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -2,6 +2,37 @@ import type { Dish, Category, Table, Order, AuthResponse, DashboardStats, Invent
 
 const API_BASE = '/api'
 
+/**
+ * 前端内存缓存（stale-while-revalidate 策略）
+ * 缓存命中时立即返回，同时后台静默刷新
+ */
+interface CacheEntry<T> {
+  data: T
+  timestamp: number
+}
+
+const apiCache = new Map<string, CacheEntry<unknown>>()
+const CACHE_TTL = 30_000 // 30 seconds
+
+function getCached<T>(key: string): T | null {
+  const entry = apiCache.get(key) as CacheEntry<T> | undefined
+  if (!entry) return null
+  if (Date.now() - entry.timestamp > CACHE_TTL) {
+    apiCache.delete(key)
+    return null
+  }
+  return entry.data
+}
+
+function setCache<T>(key: string, data: T): void {
+  apiCache.set(key, { data, timestamp: Date.now() } as CacheEntry<unknown>)
+}
+
+function isCacheFresh(key: string): boolean {
+  const entry = apiCache.get(key)
+  return !!entry && (Date.now() - entry.timestamp < CACHE_TTL)
+}
+
 export class ApiError extends Error {
   public status: number
   public data?: unknown
@@ -97,7 +128,23 @@ export function createCancellableRequest<T>(
 export const api = {
   // Home data (combined endpoint for low bandwidth optimization)
   async getHomeData() {
-    return request<{ success: boolean; data: { categories: Category[]; dishes: Dish[] } }>('/dishes/home-data')
+    const cacheKey = 'home-data'
+    const cached = getCached<{ success: boolean; data: { categories: Category[]; dishes: Dish[] } }>(cacheKey)
+    
+    // Stale-while-revalidate: return cache immediately, refresh in background
+    const fetchPromise = request<{ success: boolean; data: { categories: Category[]; dishes: Dish[] } }>('/dishes/home-data')
+      .then((res) => {
+        setCache(cacheKey, res)
+        return res
+      })
+    
+    if (cached && isCacheFresh(cacheKey)) {
+      // Return cached data, but also trigger background refresh (fire-and-forget)
+      fetchPromise.catch(() => {}) // suppress unhandled rejection
+      return cached
+    }
+    
+    return fetchPromise
   },
   
   // Dishes
@@ -113,9 +160,22 @@ export const api = {
   async searchDishes(query: string) {
     return request<{ success: boolean; data: Dish[] }>(`/dishes/search/query?q=${encodeURIComponent(query)}`)
   },
+
+  // Restaurant Info (public)
+  async getRestaurantInfo() {
+    return request<{ success: boolean; data: {
+      name: string; phone: string; address: string;
+      business_hours: { days: number[]; periods: { open: string; close: string }[] }; description: string; features: string[]
+    } }>('/restaurant-info')
+  },
   
   async getCategories() {
-    return request<{ success: boolean; data: Category[] }>('/dishes/categories/all')
+    const cacheKey = 'categories'
+    const cached = getCached<{ success: boolean; data: Category[] }>(cacheKey)
+    if (cached && isCacheFresh(cacheKey)) return cached
+    const res = await request<{ success: boolean; data: Category[] }>('/dishes/categories/all')
+    setCache(cacheKey, res)
+    return res
   },
   
   // Tables
@@ -195,6 +255,7 @@ export const api = {
     return request<{ success: boolean; data: AuthResponse }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
+      skip401Handler: true,
     })
   },
   
@@ -418,9 +479,16 @@ export const api = {
     })
   },
   
-  async clearAllOrders() {
+  async deleteOrder(id: string) {
+    return request<{ success: boolean; message: string }>(`/admin/orders/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async clearAllOrders(scope?: 'today' | 'yesterday' | 'week' | 'month') {
     return request<{ success: boolean; message: string }>('/admin/clear-orders', {
       method: 'POST',
+      body: JSON.stringify({ scope }),
     })
   },
   

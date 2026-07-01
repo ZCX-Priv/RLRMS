@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
 import type { Order } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight, ClipboardList } from 'lucide-vue-next'
 
 const router = useRouter()
 const appStore = useAppStore()
@@ -151,7 +151,14 @@ function handleVisibilityChange() {
         </div>
 
         <div v-else-if="initialized && orders.length === 0" class="empty-state">
-          暂无订单
+          <div class="empty-icon">
+            <ClipboardList :size="48" />
+          </div>
+          <h3 class="empty-title">暂无订单</h3>
+          <p class="empty-description">当前没有订单记录</p>
+          <button class="btn btn-primary" @click="router.push('/')">
+            去点餐
+          </button>
         </div>
 
         <div v-else-if="initialized" class="orders-list">
@@ -183,7 +190,10 @@ function handleVisibilityChange() {
 
 <style scoped>
 .orders-page {
-  min-height: 100vh;
+  height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background-color: var(--color-bg-primary);
 }
 
@@ -196,6 +206,7 @@ function handleVisibilityChange() {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+  flex-shrink: 0;
 }
 
 .page-header h1 {
@@ -204,7 +215,11 @@ function handleVisibilityChange() {
 }
 
 .page-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: var(--spacing-md);
+  overflow-y: auto;
 }
 
 .loading-container {
@@ -227,9 +242,39 @@ function handleVisibilityChange() {
 }
 
 .empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-3xl) var(--spacing-xl);
   text-align: center;
-  padding: var(--spacing-2xl);
+}
+
+.empty-icon {
+  width: 100px;
+  height: 100px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--spacing-xl);
+  color: var(--color-primary);
+}
+
+.empty-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.empty-description {
+  font-size: 0.875rem;
   color: var(--color-text-muted);
+  max-width: 280px;
+  margin-bottom: var(--spacing-xl);
 }
 
 .orders-list {

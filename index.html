@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preload" as="image" href="/logo.png" />
     <title>红灯笼食府</title>
     <style>
       #loading-splash {
@@ -39,6 +40,18 @@
       }
       @keyframes spin {
         to { transform: rotate(360deg); }
+      }
+      /* Dark mode loading splash */
+      html[data-theme="dark"] #loading-splash {
+        background: linear-gradient(135deg, #1A0A0A 0%, #2D1515 100%);
+      }
+      html[data-theme="dark"] .loading-title {
+        color: #EF4444;
+        text-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+      }
+      html[data-theme="dark"] .loading-spinner {
+        border-color: #7F1D1D;
+        border-top-color: #EF4444;
       }
     </style>
     <script>

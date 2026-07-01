@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
+import { useCartStore } from '@/stores/cart'
+import { api } from '@/api'
 import { Home, User, ClipboardList } from 'lucide-vue-next'
 
 const route = useRoute()
 const appStore = useAppStore()
+const cartStore = useCartStore()
 
 const menuItems = [
   { icon: Home, label: '首页', path: '/' },
@@ -36,6 +39,50 @@ watch(
     }
   }
 )
+
+// 修改订单模式：轮询订单状态（全局生效，跨页面持续运行）
+let modifyOrderTimer: ReturnType<typeof setTimeout> | null = null
+let modifyOrderNotified = false
+
+async function pollModifyOrderStatus() {
+  if (!cartStore.addDishOrderId) { stopModifyOrderPolling(); return }
+  try {
+    const res = await api.getOrder(cartStore.addDishOrderId)
+    if (res.data.status === 'completed' || res.data.status === 'cancelled') {
+      stopModifyOrderPolling()
+      if (!modifyOrderNotified) {
+        modifyOrderNotified = true
+        cartStore.clearCart()
+        appStore.showToast(res.data.status === 'completed' ? '订单已完成' : '订单已取消', 'info')
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+function startModifyOrderPolling() {
+  if (modifyOrderTimer) return
+  modifyOrderNotified = false
+  schedulePoll()
+}
+
+function schedulePoll() {
+  modifyOrderTimer = setTimeout(async () => {
+    await pollModifyOrderStatus()
+    if (cartStore.addDishOrderId) schedulePoll()
+  }, 5000)
+}
+
+function stopModifyOrderPolling() {
+  if (modifyOrderTimer) { clearTimeout(modifyOrderTimer); modifyOrderTimer = null }
+}
+
+// 响应 addDishOrderId 变化，自动启停轮询
+watch(() => cartStore.addDishOrderId, (val) => {
+  if (val) startModifyOrderPolling()
+  else stopModifyOrderPolling()
+}, { immediate: true })
+
+onUnmounted(() => stopModifyOrderPolling())
 </script>
 
 <template>

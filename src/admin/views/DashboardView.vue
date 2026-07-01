@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent, inject, type Ref } from 'vue'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
-import { useOrderPolling } from '@/shared/composables/useOrderPolling'
 import type { DashboardStats, Order } from '@/types'
 import Skeleton from '@/shared/components/Skeleton.vue'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { ShoppingBag, DollarSign, Clock, CheckCircle, Eye, XCircle, Trash2, Box, Bell, BellOff, Search, ClipboardList } from 'lucide-vue-next'
+import { ShoppingBag, DollarSign, Clock, CheckCircle, Eye, XCircle, Trash2, Box, Search, ClipboardList, Bell, BellOff, ChevronDown, ChevronUp } from 'lucide-vue-next'
 
 const appStore = useAppStore()
+
+const autoRefreshEnabled = inject<Ref<boolean>>('autoRefreshEnabled', ref(true))
+const toggleAutoRefresh = inject<() => void>('toggleAutoRefresh', () => {})
 
 const stats = ref<DashboardStats | null>(null)
 const orders = ref<Order[]>([])
@@ -20,14 +22,89 @@ const statsInitialized = ref(false)
 const ordersInitialized = ref(false)
 const selectedOrder = ref<Order | null>(null)
 const showDetailModal = ref(false)
+
+// 修改记录 diff 聚合
+const modificationsDiff = computed(() => {
+  if (!selectedOrder.value?.modifications?.length) return []
+  const map = new Map<string, { key: string; dish_name: string; spec: string | null; quantity: number; unit_price: number; type: 'add' | 'remove' }>()
+  for (const m of selectedOrder.value.modifications) {
+    const key = `${m.dish_id}-${m.spec || ''}`
+    const existing = map.get(key)
+    const delta = existing ? existing.quantity + m.quantity_delta : m.quantity_delta
+    map.set(key, { key, dish_name: m.dish_name, spec: m.spec, quantity: delta, unit_price: m.unit_price, type: delta >= 0 ? 'add' : 'remove' })
+  }
+  return [...map.values()].filter(d => d.quantity !== 0)
+    .sort((a, b) => (a.type === 'add' ? -1 : 1) - (b.type === 'add' ? -1 : 1))
+})
+
+// 菜品增减映射，用于在菜品列表中显示 +/-n 标签
+const itemDeltaMap = computed(() => {
+  const map = new Map<string, { delta: number; type: 'add' | 'remove' }>()
+  for (const m of modificationsDiff.value) {
+    map.set(m.key, { delta: Math.abs(m.quantity), type: m.type })
+  }
+  return map
+})
+// 修改记录折叠状态
+const modificationsExpanded = ref(false)
+
+// 被完全移除的菜品（不在当前 items 中，但在 modificationsDiff 中有 remove 记录）
+// 转为 OrderItem 兼容形状，便于与当前菜品列表合并显示
+const removedDiffItems = computed(() => {
+  if (!selectedOrder.value || !modificationsDiff.value.length) return []
+  const currentItemKeys = new Set(
+    selectedOrder.value.items.map(i => `${i.dish_id}-${i.spec || ''}`)
+  )
+  return modificationsDiff.value
+    .filter(m => m.type === 'remove' && !currentItemKeys.has(m.key))
+    .map(m => ({
+      id: `__removed__${m.key}`,
+      order_id: selectedOrder.value!.id,
+      dish_id: m.key.split('-')[0],
+      dish_name: m.dish_name,
+      quantity: Math.abs(m.quantity),
+      unit_price: m.unit_price,
+      subtotal: Math.abs(m.quantity) * m.unit_price,
+      spec: m.spec,
+    }))
+})
+
+// 菜品明细折叠
+const ITEMS_COLLAPSE_THRESHOLD = 3
+const itemsExpanded = ref(false)
+const displayItems = computed(() => {
+  if (!selectedOrder.value) return []
+  const all = [...selectedOrder.value.items, ...removedDiffItems.value]
+  if (itemsExpanded.value || all.length <= ITEMS_COLLAPSE_THRESHOLD) return all
+  return all.slice(0, ITEMS_COLLAPSE_THRESHOLD)
+})
+const hasMoreItems = computed(() => {
+  const total = (selectedOrder.value?.items.length ?? 0) + removedDiffItems.value.length
+  return total > ITEMS_COLLAPSE_THRESHOLD
+})
+
 const showClearConfirm = ref(false)
+const showDeleteConfirm = ref(false)
+const deletingOrder = ref<Order | null>(null)
+const showClearDropdown = ref(false)
+const clearScope = ref<'today' | 'yesterday' | 'week' | 'month' | null>(null)
+const clearDropdownRef = ref<HTMLElement | null>(null)
 const statusFilter = ref('')
 const dateFilter = ref('today')
-const autoRefreshEnabled = ref(true)
-const newOrderCount = ref(0)
-const showNewOrderNotification = ref(false)
-const addDishRequestCount = ref(0)
-let addDishResetTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearScopeLabels: Record<string, string> = {
+  today: '今日',
+  yesterday: '昨日',
+  week: '本周',
+  month: '本月',
+}
+
+const clearScopes = [
+  { value: 'today' as const, label: '清空今日' },
+  { value: 'yesterday' as const, label: '清空昨日' },
+  { value: 'week' as const, label: '清空本周' },
+  { value: 'month' as const, label: '清空本月' },
+]
 
 // 订单查询相关
 const showSearchModal = ref(false)
@@ -141,6 +218,30 @@ function getDateParam(): { startDate: string; endDate: string } | undefined {
   return undefined
 }
 
+function getScopeDateRange(scope: 'today' | 'yesterday' | 'week' | 'month'): { startDate: string; endDate: string } | null {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  if (scope === 'today') {
+    const s = getLocalDateString(today)
+    return { startDate: s, endDate: s }
+  } else if (scope === 'yesterday') {
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const s = getLocalDateString(yesterday)
+    return { startDate: s, endDate: s }
+  } else if (scope === 'week') {
+    const weekAgo = new Date(today)
+    weekAgo.setDate(weekAgo.getDate() - 7)
+    return { startDate: getLocalDateString(weekAgo), endDate: getLocalDateString(today) }
+  } else if (scope === 'month') {
+    const monthAgo = new Date(today)
+    monthAgo.setMonth(monthAgo.getMonth() - 1)
+    return { startDate: getLocalDateString(monthAgo), endDate: getLocalDateString(today) }
+  }
+  return null
+}
+
 async function fetchDashboard(showLoading = true) {
   try {
     if (showLoading && !statsInitialized.value) {
@@ -182,20 +283,33 @@ async function fetchOrders(isPollingRefresh = false) {
   }
 }
 
-function handleClearAllOrders() {
+function handleClearAllOrders(scope: 'today' | 'yesterday' | 'week' | 'month' | null) {
+  clearScope.value = scope
+  showClearDropdown.value = false
   showClearConfirm.value = true
 }
 
 async function confirmClearAllOrders() {
   const previousOrders = [...orders.value]
   const previousStats = stats.value ? { ...stats.value } : null
+  const scope = clearScope.value
   
-  // 仅移除已完成和已取消的订单，保留其他状态订单
-  orders.value = orders.value.filter(o => o.status !== 'completed' && o.status !== 'cancelled')
+  // 仅移除目标范围内已完成和已取消的订单，保留其他状态及非目标范围的订单
+  const scopeRange = scope ? getScopeDateRange(scope) : null
+  if (scopeRange) {
+    orders.value = orders.value.filter(o => {
+      if (o.status !== 'completed' && o.status !== 'cancelled') return true
+      const orderDate = o.created_at.slice(0, 10)
+      return !(orderDate >= scopeRange.startDate && orderDate <= scopeRange.endDate)
+    })
+  } else {
+    orders.value = orders.value.filter(o => o.status !== 'completed' && o.status !== 'cancelled')
+  }
   
   try {
-    await api.clearAllOrders()
-    appStore.showToast('已完成和已取消的订单已清空', 'success')
+    await api.clearAllOrders(scope ?? undefined)
+    const scopeText = scope ? clearScopeLabels[scope] : ''
+    appStore.showToast(`已清空${scopeText}所有订单`, 'success')
     fetchDashboard(false)
   } catch (error) {
     console.error('Failed to clear orders:', error)
@@ -204,6 +318,7 @@ async function confirmClearAllOrders() {
     appStore.showToast('清空失败', 'error')
   } finally {
     showClearConfirm.value = false
+    clearScope.value = null
   }
 }
 
@@ -240,6 +355,39 @@ async function updateOrderStatus(order: Order, status: Order['status']) {
   }
 }
 
+function deleteOrder(order: Order) {
+  deletingOrder.value = order
+  showDeleteConfirm.value = true
+}
+
+async function confirmDeleteOrder() {
+  const order = deletingOrder.value
+  if (!order) return
+
+  const index = orders.value.findIndex(o => o.id === order.id)
+  const previousOrders = [...orders.value]
+  const previousStats = stats.value ? { ...stats.value } : null
+
+  // 乐观更新：立即从列表中移除
+  if (index !== -1) {
+    orders.value = orders.value.filter(o => o.id !== order.id)
+  }
+
+  try {
+    await api.deleteOrder(order.id)
+    appStore.showToast(`订单 ${order.order_no} 已删除`, 'success')
+    fetchDashboard(false)
+  } catch (error) {
+    console.error('Failed to delete order:', error)
+    orders.value = previousOrders
+    stats.value = previousStats
+    appStore.showToast('删除订单失败', 'error')
+  } finally {
+    showDeleteConfirm.value = false
+    deletingOrder.value = null
+  }
+}
+
 function formatDate(dateStr: string) {
   if (!dateStr) return ''
   const date = new Date(dateStr)
@@ -252,241 +400,101 @@ function formatDate(dateStr: string) {
   return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
-function playNotificationSound() {
-  try {
-    const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-    
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-    
-    oscillator.frequency.value = 800
-    oscillator.type = 'sine'
-    gainNode.gain.value = 0.3
-    
-    oscillator.start()
-    oscillator.stop(audioContext.currentTime + 0.15)
-    
-    setTimeout(() => {
-      const osc2 = audioContext.createOscillator()
-      const gain2 = audioContext.createGain()
-      osc2.connect(gain2)
-      gain2.connect(audioContext.destination)
-      osc2.frequency.value = 1000
-      osc2.type = 'sine'
-      gain2.gain.value = 0.3
-      osc2.start()
-      osc2.stop(audioContext.currentTime + 0.15)
-    }, 200)
-  } catch (e) {
-    console.log('Audio notification not supported')
-  }
-}
+// ===== SSE 事件监听 =====
 
-function handleNewOrder(count: number) {
-  newOrderCount.value += count
-  showNewOrderNotification.value = true
-  playNotificationSound()
-  
-  setTimeout(() => {
-    showNewOrderNotification.value = false
-  }, 5000)
-}
+function handleSSENewOrder(e: Event) {
+  const newOrder = (e as CustomEvent<Order>).detail
+  const dateRange = getDateParam()
+  const orderDate = newOrder.created_at?.slice(0, 10)
+  const matchesDate = !dateRange || (orderDate >= dateRange.startDate && orderDate <= dateRange.endDate)
+  const matchesStatus = !statusFilter.value || newOrder.status === statusFilter.value
 
-function dismissNotification() {
-  showNewOrderNotification.value = false
-  newOrderCount.value = 0
-}
-
-// ===== SSE 实时推送 =====
-let eventSource: EventSource | null = null
-let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null
-const sseConnected = ref(false)
-const SSE_RECONNECT_DELAY = 3000
-
-function connectSSE() {
-  // 清理旧的连接
-  disconnectSSE()
-  
-  const es = new EventSource('/api/admin/events', { withCredentials: true })
-  eventSource = es
-  
-  es.addEventListener('connected', () => {
-    sseConnected.value = true
-    // SSE 连接成功后停止轮询（如果正在轮询）
-    if (isPolling.value) {
-      stopPolling()
-    }
-  })
-  
-  // 新订单事件：增量更新
-  es.addEventListener('new_order', (e: MessageEvent) => {
-    try {
-      const newOrder: Order = JSON.parse(e.data)
-      // 如果当前没有筛选条件，直接插入到列表头部
-      if (!statusFilter.value && dateFilter.value === 'today') {
-        orders.value.unshift(newOrder)
-        handleNewOrder(1)
-        fetchDashboard(false)
-      } else {
-        // 有筛选条件时全量刷新
-        fetchOrders(true)
-        fetchDashboard(false)
-      }
-    } catch (err) {
-      console.error('SSE new_order parse error:', err)
-    }
-  })
-  
-  // 订单状态更新事件：增量更新
-  es.addEventListener('order_updated', (e: MessageEvent) => {
-    try {
-      const { id, status, type } = JSON.parse(e.data) as {
-        id: string; status: Order['status']; type?: string
-      }
-      const idx = orders.value.findIndex(o => o.id === id)
-      if (idx !== -1) {
-        orders.value[idx] = { ...orders.value[idx]!, status }
-      }
-      // 同步更新选中订单的状态
-      if (selectedOrder.value?.id === id) {
-        selectedOrder.value = { ...selectedOrder.value, status }
-      }
-      // 加菜事件：累加计数、弹 toast 并刷新订单列表以获取新菜品
-      if (type === 'add_items') {
-        addDishRequestCount.value++
-        appStore.showToast(`收到${addDishRequestCount.value}条加菜请求，请确认`, 'info')
-        // 10秒后自动重置计数器
-        if (addDishResetTimer) clearTimeout(addDishResetTimer)
-        addDishResetTimer = setTimeout(() => {
-          addDishRequestCount.value = 0
-          addDishResetTimer = null
-        }, 10000)
-        fetchOrders(false)
-      } else {
-        fetchDashboard(false)
-      }
-    } catch (err) {
-      console.error('SSE order_updated parse error:', err)
-    }
-  })
-  
-  es.onerror = () => {
-    sseConnected.value = false
-    es.close()
-    eventSource = null
-    // SSE 断开后启用轮询作为降级方案
-    if (autoRefreshEnabled.value && !isPolling.value) {
-      startPolling()
-    }
-    // 定时重连 SSE
-    if (!sseReconnectTimer) {
-      sseReconnectTimer = setTimeout(() => {
-        sseReconnectTimer = null
-        connectSSE()
-      }, SSE_RECONNECT_DELAY)
-    }
-  }
-}
-
-function disconnectSSE() {
-  if (eventSource) {
-    eventSource.close()
-    eventSource = null
-  }
-  sseConnected.value = false
-  if (sseReconnectTimer) {
-    clearTimeout(sseReconnectTimer)
-    sseReconnectTimer = null
-  }
-}
-
-async function fetchOrdersWithCheck() {
-  const previousCount = orders.value.length
-  await fetchOrders(true)
-  if (autoRefreshEnabled.value && orders.value.length > previousCount) {
-    handleNewOrder(orders.value.length - previousCount)
-    fetchDashboard()
-  }
-}
-
-const { isPolling, startPolling, stopPolling } = useOrderPolling(
-  fetchOrdersWithCheck,
-  { interval: 5000, shouldPoll: () => !sseConnected.value }
-)
-
-function toggleAutoRefresh() {
-  autoRefreshEnabled.value = !autoRefreshEnabled.value
-  if (autoRefreshEnabled.value) {
-    // SSE 未连接时才启动轮询
-    if (!sseConnected.value) {
-      startPolling()
-    }
-    appStore.showToast('已开启自动刷新', 'success')
+  if (matchesDate && matchesStatus) {
+    orders.value.unshift(newOrder)
   } else {
-    stopPolling()
-    disconnectSSE()
-    appStore.showToast('已关闭自动刷新', 'info')
+    fetchOrders(true)
   }
+  fetchDashboard(false)
 }
 
-watch(autoRefreshEnabled, (enabled) => {
-  if (enabled) {
-    if (!sseConnected.value && !isPolling.value) {
-      startPolling()
-    }
-    // 尝试重新连接 SSE
-    if (!eventSource) {
-      connectSSE()
-    }
-  } else if (!enabled && isPolling.value) {
-    stopPolling()
+function handleSSEOrderUpdated(e: Event) {
+  const { id, status, type } = (e as CustomEvent<{ id: string; status: Order['status']; type?: string }>).detail
+  const idx = orders.value.findIndex(o => o.id === id)
+  if (idx !== -1) {
+    orders.value[idx] = { ...orders.value[idx]!, status }
   }
-})
+  if (selectedOrder.value?.id === id) {
+    selectedOrder.value = { ...selectedOrder.value, status }
+  }
+  if (type === 'add_items') {
+    fetchOrders(false)
+  }
+  fetchDashboard(false)
+}
+
+function handleSSEPollingOrders(e: Event) {
+  const allOrders = (e as CustomEvent<Order[]>).detail
+  const dateRange = getDateParam()
+  let filtered = allOrders
+  if (dateRange) {
+    filtered = filtered.filter(o => {
+      const orderDate = o.created_at.slice(0, 10)
+      return orderDate >= dateRange.startDate && orderDate <= dateRange.endDate
+    })
+  }
+  if (statusFilter.value) {
+    filtered = filtered.filter(o => o.status === statusFilter.value)
+  }
+  orders.value = filtered
+  fetchDashboard(false)
+}
+
+function handleSSEOrderDeleted(e: Event) {
+  const { id } = (e as CustomEvent<{ id: string }>).detail
+  orders.value = orders.value.filter(o => o.id !== id)
+  fetchDashboard(false)
+}
 
 onMounted(() => {
   fetchDashboard()
   fetchOrders()
-  connectSSE()
+  window.addEventListener('sse:new_order', handleSSENewOrder)
+  window.addEventListener('sse:order_updated', handleSSEOrderUpdated)
+  window.addEventListener('sse:polling_orders', handleSSEPollingOrders)
+  window.addEventListener('sse:order_deleted', handleSSEOrderDeleted)
+  document.addEventListener('click', handleClickOutside)
 })
 
 onUnmounted(() => {
-  disconnectSSE()
-  if (addDishResetTimer) {
-    clearTimeout(addDishResetTimer)
-    addDishResetTimer = null
-  }
+  window.removeEventListener('sse:new_order', handleSSENewOrder)
+  window.removeEventListener('sse:order_updated', handleSSEOrderUpdated)
+  window.removeEventListener('sse:polling_orders', handleSSEPollingOrders)
+  window.removeEventListener('sse:order_deleted', handleSSEOrderDeleted)
+  document.removeEventListener('click', handleClickOutside)
 })
+
+function handleClickOutside(e: MouseEvent) {
+  if (showClearDropdown.value && clearDropdownRef.value && !clearDropdownRef.value.contains(e.target as Node)) {
+    showClearDropdown.value = false
+  }
+}
 </script>
 
 <template>
   <div class="dashboard-page">
     <div class="page-header">
       <h1 class="page-title">概览</h1>
-      <button 
+      <button
         class="auto-refresh-btn"
-        :class="{ 'active': autoRefreshEnabled }"
+        :class="{ 'auto-refresh-active': autoRefreshEnabled }"
         @click="toggleAutoRefresh"
-        :title="autoRefreshEnabled ? '点击关闭自动刷新' : '点击开启自动刷新'"
+        :title="autoRefreshEnabled ? '点击关闭订单接收' : '点击开启订单接收'"
       >
-        <Bell v-if="autoRefreshEnabled" :size="18" />
-        <BellOff v-else :size="18" />
-        <span>{{ autoRefreshEnabled ? '订单接受中' : '已暂停' }}</span>
+        <Bell v-if="autoRefreshEnabled" :size="16" />
+        <BellOff v-else :size="16" />
+        <span>{{ autoRefreshEnabled ? '订单接受中' : '已暂停接收' }}</span>
       </button>
     </div>
-
-    <Teleport to="body">
-      <Transition name="toast-notify">
-        <div v-if="showNewOrderNotification" class="new-order-toast" @click="dismissNotification">
-          <div class="notification-content">
-            <Bell :size="20" class="notification-icon" />
-            <span class="notification-text">有 {{ newOrderCount }} 个新订单！</span>
-          </div>
-          <span class="notification-hint">点击关闭</span>
-        </div>
-      </Transition>
-    </Teleport>
 
     <!-- 统计卡片骨架屏 -->
     <div v-if="loading && !statsInitialized" class="stats-grid">
@@ -562,10 +570,26 @@ onUnmounted(() => {
                 {{ opt.label }}
               </option>
             </select>
-            <button class="btn btn-danger btn-sm" @click="handleClearAllOrders">
-              <Trash2 :size="14" />
-              清空订单
-            </button>
+            <div ref="clearDropdownRef" class="clear-dropdown-wrapper">
+              <button class="btn btn-danger clear-main-btn" @click="handleClearAllOrders(null)">
+                <Trash2 :size="16" />
+                清空订单
+              </button>
+              <span class="clear-divider"></span>
+              <button class="btn btn-danger clear-toggle-btn" @click="showClearDropdown = !showClearDropdown">
+                <ChevronDown :size="14" />
+              </button>
+              <div v-if="showClearDropdown" class="clear-dropdown-menu">
+                <button
+                  v-for="item in clearScopes"
+                  :key="item.value"
+                  class="clear-dropdown-item"
+                  @click="handleClearAllOrders(item.value)"
+                >
+                  {{ item.label }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -681,6 +705,13 @@ onUnmounted(() => {
                   <XCircle :size="14" />
                   取消
                 </button>
+                <button
+                  class="btn btn-sm btn-ghost btn-delete"
+                  @click="deleteOrder(order)"
+                  title="删除订单"
+                >
+                  <Trash2 :size="14" />
+                </button>
               </div>
             </div>
           </div>
@@ -722,24 +753,6 @@ onUnmounted(() => {
         </div>
 
         <div class="detail-section">
-          <h4>菜品明细</h4>
-          <div
-            v-for="item in selectedOrder.items"
-            :key="item.id"
-            class="item-row"
-          >
-            <span>{{ item.dish_name }}</span>
-            <span v-if="item.spec">({{ item.spec }})</span>
-            <span>x{{ item.quantity }}</span>
-            <span>{{ item.subtotal }}元</span>
-          </div>
-          <div class="total-row">
-            <span>总计</span>
-            <span>{{ selectedOrder.total_amount.toFixed(2) }}元</span>
-          </div>
-        </div>
-
-        <div class="detail-section">
           <h4>更新状态</h4>
           <div class="status-buttons">
             <button
@@ -753,14 +766,70 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
+
+        <div class="detail-section">
+          <div class="detail-section-header">
+            <h4>菜品明细</h4>
+            <button v-if="modificationsDiff.length > 0" class="mod-toggle-btn" @click="modificationsExpanded = !modificationsExpanded">
+              <span>修改记录</span>
+              <component :is="modificationsExpanded ? ChevronUp : ChevronDown" :size="14" />
+            </button>
+          </div>
+          <!-- 修改记录 diff（折叠） -->
+          <div v-if="modificationsExpanded && modificationsDiff.length > 0" class="diff-list">
+            <div v-for="m in modificationsDiff" :key="m.key" class="diff-row" :class="m.type">
+              <span class="diff-sign">{{ m.type === 'add' ? '+' : '-' }}</span>
+              <span>{{ m.dish_name }}</span>
+              <span v-if="m.spec">({{ m.spec }})</span>
+              <span class="diff-qty">x{{ Math.abs(m.quantity) }}</span>
+              <span class="diff-price">{{ (Math.abs(m.quantity) * m.unit_price).toFixed(2) }}元</span>
+            </div>
+          </div>
+          <div
+            v-for="item in displayItems"
+            :key="item.id"
+            class="item-row"
+            :class="{ 'item-removed': item.id.startsWith('__removed__') }"
+          >
+            <span>{{ item.dish_name }}</span>
+            <span v-if="item.spec">({{ item.spec }})</span>
+            <span
+              v-if="!item.id.startsWith('__removed__') && itemDeltaMap.get(`${item.dish_id}-${item.spec || ''}`)"
+              class="item-delta-badge"
+              :class="itemDeltaMap.get(`${item.dish_id}-${item.spec || ''}`)!.type"
+            >{{ itemDeltaMap.get(`${item.dish_id}-${item.spec || ''}`)!.type === 'add' ? '+' : '-' }}{{ itemDeltaMap.get(`${item.dish_id}-${item.spec || ''}`)!.delta }}</span>
+            <span v-else-if="item.id.startsWith('__removed__')" class="item-delta-badge remove">-{{ item.quantity }}</span>
+            <span>x{{ item.quantity }}</span>
+            <span>{{ item.subtotal }}元</span>
+          </div>
+          <button v-if="hasMoreItems" class="items-toggle" @click="itemsExpanded = !itemsExpanded">
+            <component :is="itemsExpanded ? ChevronUp : ChevronDown" :size="14" />
+            {{ itemsExpanded ? '收起' : `展开全部 (${(selectedOrder?.items.length ?? 0) + removedDiffItems.length}项)` }}
+          </button>
+          <div class="total-row">
+            <span>总计</span>
+            <span>{{ selectedOrder.total_amount.toFixed(2) }}元</span>
+          </div>
+        </div>
       </div>
     </Modal>
+
+    <!-- Delete Order Confirm Dialog -->
+    <ConfirmDialog
+      :show="showDeleteConfirm"
+      title="删除订单"
+      :message="`确定要删除订单 ${deletingOrder?.order_no ?? ''} 吗？此操作不可恢复！`"
+      confirm-text="确定删除"
+      cancel-text="取消"
+      @confirm="confirmDeleteOrder"
+      @cancel="showDeleteConfirm = false; deletingOrder = null"
+    />
 
     <!-- Clear Orders Confirm Dialog -->
     <ConfirmDialog
       :show="showClearConfirm"
       title="清空订单"
-      message="确定要清空所有已完成和已取消的订单吗？此操作不可恢复！"
+      :message="`确定要清空${clearScope ? clearScopeLabels[clearScope] : ''}所有订单吗？此操作不可恢复！`"
       confirm-text="确定"
       cancel-text="取消"
       @confirm="confirmClearAllOrders"
@@ -834,6 +903,9 @@ onUnmounted(() => {
 <style scoped>
 .dashboard-page {
   max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 64px);
 }
 
 .page-title {
@@ -931,6 +1003,9 @@ onUnmounted(() => {
   background-color: var(--color-bg-secondary);
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .section-header {
@@ -960,11 +1035,11 @@ onUnmounted(() => {
 }
 
 .empty-state {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-3xl) var(--spacing-xl);
   text-align: center;
 }
 
@@ -994,6 +1069,7 @@ onUnmounted(() => {
 }
 
 .orders-list {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -1092,6 +1168,15 @@ onUnmounted(() => {
   gap: var(--spacing-sm);
 }
 
+.btn-delete {
+  color: var(--color-error);
+}
+
+.btn-delete:hover {
+  background-color: rgba(220, 38, 38, 0.08);
+  color: var(--color-error);
+}
+
 .order-detail {
   display: flex;
   flex-direction: column;
@@ -1116,6 +1201,77 @@ onUnmounted(() => {
   color: var(--color-text-muted);
 }
 
+/* 修改记录 diff */
+.detail-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detail-section-header h4 {
+  margin: 0;
+}
+
+.mod-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-tertiary);
+  transition: all var(--transition-fast);
+}
+
+.mod-toggle-btn:hover {
+  color: var(--color-primary);
+  background-color: var(--color-border-light);
+}
+
+.diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px dashed var(--color-border-light);
+}
+
+.diff-row {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: 2px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-family: monospace;
+}
+
+.diff-row.add {
+  color: var(--color-success);
+  background-color: rgba(46, 160, 67, 0.08);
+}
+
+.diff-row.remove {
+  color: var(--color-error);
+  background-color: rgba(248, 81, 73, 0.08);
+}
+
+.diff-sign {
+  font-weight: 700;
+  width: 14px;
+}
+
+.diff-qty {
+  margin-left: var(--spacing-sm);
+}
+
+.diff-price {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .item-row {
   display: flex;
   gap: var(--spacing-sm);
@@ -1128,16 +1284,67 @@ onUnmounted(() => {
   color: var(--color-primary);
 }
 
+.item-removed {
+  opacity: 0.6;
+}
+
+.item-removed span:first-child {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
+}
+
+.item-delta-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: var(--radius-full);
+  line-height: 1.4;
+}
+
+.item-delta-badge.add {
+  background-color: rgba(46, 160, 67, 0.12);
+  color: var(--color-success);
+}
+
+.item-delta-badge.remove {
+  background-color: rgba(248, 81, 73, 0.12);
+  color: var(--color-error);
+}
+
+.items-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  transition: opacity var(--transition-fast);
+}
+
+.items-toggle:hover {
+  opacity: 0.7;
+}
+
 .total-row {
   display: flex;
   justify-content: space-between;
-  padding-top: var(--spacing-sm);
-  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-md);
+  margin-top: var(--spacing-md);
   border-top: 1px solid var(--color-border-light);
-  font-weight: 600;
+  font-size: 1.125rem;
+  font-weight: 700;
 }
 
 .total-row span:last-child {
+  font-size: 1.25rem;
+  font-weight: 700;
   color: var(--color-primary);
 }
 
@@ -1186,124 +1393,46 @@ onUnmounted(() => {
 }
 
 .auto-refresh-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background-color: var(--color-bg-secondary);
-  color: var(--color-text-secondary);
   font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-light);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
 }
 
 .auto-refresh-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
 }
 
-.auto-refresh-btn.active {
+.auto-refresh-btn.auto-refresh-active {
+  color: white;
   background-color: var(--color-primary);
   border-color: var(--color-primary);
-  color: white;
 }
 
-.auto-refresh-btn.active:hover {
-  background-color: var(--color-primary-dark, #b91c1c);
+.auto-refresh-btn.auto-refresh-active:hover {
+  opacity: 0.9;
 }
 
-.new-order-toast {
-  position: fixed;
-  top: var(--spacing-lg);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: var(--z-toast, 9999);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: var(--spacing-md) var(--spacing-lg);
-  background: linear-gradient(135deg, var(--color-primary) 0%, #dc2626 100%);
-  color: white;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  animation: pulse-shadow 2s infinite;
-  box-shadow: 0 4px 20px rgba(220, 38, 38, 0.3);
-  will-change: transform, opacity;
-}
-
-.notification-content {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.notification-icon {
-  animation: bell-shake 0.5s ease-in-out infinite;
-}
-
-.notification-text {
-  font-weight: 600;
-  font-size: 1rem;
-}
-
-.notification-hint {
-  font-size: 0.75rem;
-  opacity: 0.8;
-}
-
-@keyframes pulse-shadow {
-  0%, 100% {
-    box-shadow: 0 4px 20px rgba(220, 38, 38, 0.3);
+@media (max-width: 480px) {
+  .auto-refresh-btn span {
+    display: none;
   }
-  50% {
-    box-shadow: 0 4px 30px rgba(220, 38, 38, 0.5);
+
+  .auto-refresh-btn {
+    padding: var(--spacing-sm);
   }
 }
 
-@keyframes bell-shake {
-  0%, 100% {
-    transform: rotate(0deg);
-  }
-  25% {
-    transform: rotate(15deg);
-  }
-  75% {
-    transform: rotate(-15deg);
-  }
-}
 
-.toast-notify-enter-active {
-  animation: toastNotifyIn var(--duration-normal) var(--ease-out);
-}
-
-.toast-notify-leave-active {
-  animation: toastNotifyOut var(--duration-fast) var(--ease-in);
-}
-
-@keyframes toastNotifyIn {
-  0% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-30px) scale(0.9);
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
-}
-
-@keyframes toastNotifyOut {
-  0% {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-20px) scale(0.95);
-  }
-}
 
 /* 订单查询样式 */
 .search-content {
@@ -1444,5 +1573,67 @@ onUnmounted(() => {
   padding: var(--spacing-xl);
   color: var(--color-text-muted);
   font-size: 0.875rem;
+}
+
+/* 清空订单下拉菜单 */
+.clear-dropdown-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.clear-dropdown-wrapper .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.clear-main-btn {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.clear-toggle-btn {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  padding-left: var(--spacing-sm) !important;
+  padding-right: var(--spacing-sm) !important;
+  min-width: 36px;
+}
+
+.clear-divider {
+  width: 1px;
+  align-self: stretch;
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.clear-dropdown-menu {
+  position: absolute;
+  top: calc(100% + var(--spacing-xs));
+  right: 0;
+  min-width: 120px;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  padding: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+}
+
+.clear-dropdown-item {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: 0.875rem;
+  color: var(--color-error);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color var(--transition-fast);
+  cursor: pointer;
+}
+
+.clear-dropdown-item:hover {
+  background-color: rgba(220, 38, 38, 0.08);
 }
 </style>

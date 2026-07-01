@@ -137,7 +137,7 @@ body {
   min-height: 100vh;
 }
 
-/* Edge Browser Animation Fix - Force GPU acceleration */
+/* Edge Browser Animation Fix - GPU compositing hints only where truly needed */
 .card,
 .btn,
 .nav-item,
@@ -161,6 +161,10 @@ select,
 .switch-slider::before {
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+/* Only add will-change to elements with active transform animations */
+.switch-slider::before {
   will-change: transform;
 }
 

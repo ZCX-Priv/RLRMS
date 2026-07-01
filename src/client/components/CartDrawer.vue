@@ -2,6 +2,7 @@
 import { useCartStore } from '@/stores/cart'
 import { X, Trash2 } from 'lucide-vue-next'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
+import { formatPrice } from '@/utils/format'
 
 const show = defineModel<boolean>('show')
 const cartStore = useCartStore()
@@ -46,7 +47,7 @@ function handleConfirm() {
                 <span v-if="item.spec" class="item-spec">({{ item.spec }})</span>
               </div>
               <div class="item-actions">
-                <span class="item-price">{{ item.dish.price }}元</span>
+                <span class="item-price">{{ formatPrice(item.dish.price) }}</span>
                 <QuantityControl
                   :model-value="item.quantity"
                   size="sm"

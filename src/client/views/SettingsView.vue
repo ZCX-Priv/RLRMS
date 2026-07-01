@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
 import { clear as clearIndexedDB } from '@/utils/storage'
+import { api } from '@/api'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import Modal from '@/shared/components/Modal.vue'
-import { Sun, Moon, Monitor, ChevronRight, Info, Trash2, CircleUser, LogOut } from 'lucide-vue-next'
+import { Sun, Moon, Monitor, ChevronRight, ChevronDown, ChevronUp, Info, Trash2, CircleUser, LogOut, MapPin, Phone, Clock } from 'lucide-vue-next'
 
 const router = useRouter()
 const appStore = useAppStore()
@@ -14,6 +15,83 @@ const clientAuthStore = useClientAuthStore()
 
 const showAboutModal = ref(false)
 const showClearModal = ref(false)
+
+interface RestaurantInfo {
+  name: string
+  phone: string
+  address: string
+  business_hours: { days: number[]; periods: { open: string; close: string }[] }
+  description: string
+  features: string[]
+}
+
+const restaurantInfo = ref<RestaurantInfo>({
+  name: '',
+  phone: '',
+  address: '',
+  business_hours: { days: [], periods: [] },
+  description: '',
+  features: [],
+})
+
+const descExpanded = ref(false)
+const descRef = ref<HTMLElement | null>(null)
+const descOverflow = ref(false)
+
+function checkDescOverflow() {
+  const el = descRef.value
+  if (!el) return
+  const p = el.querySelector('p')
+  if (!p) return
+  const lineHeight = parseFloat(getComputedStyle(p).lineHeight) || 24
+  descOverflow.value = p.scrollHeight > lineHeight * 3 + 2
+}
+
+watch(showAboutModal, async (show) => {
+  if (show) {
+    descExpanded.value = false
+    descOverflow.value = false
+    await nextTick()
+    checkDescOverflow()
+  }
+})
+
+const DAY_NAMES = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
+function formatDays(days: number[]): string {
+  if (!days || days.length === 0) return ''
+  if (days.length === 7) return '每天'
+  const sorted = [...days].sort((a, b) => a - b)
+  const dayName = (d: number) => DAY_NAMES[d - 1] ?? `星期${d}`
+  // 检查是否连续范围
+  const ranges: string[] = []
+  let start = sorted[0]!
+  let end = sorted[0]!
+  for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i]!
+    if (cur === end + 1) {
+      end = cur
+    } else {
+      ranges.push(start === end ? dayName(start) : `${dayName(start)}至${dayName(end)}`)
+      start = cur
+      end = cur
+    }
+  }
+  ranges.push(start === end ? dayName(start) : `${dayName(start)}至${dayName(end)}`)
+  return ranges.join('、')
+}
+
+onMounted(async () => {
+  try {
+    const res = await api.getRestaurantInfo()
+    restaurantInfo.value = res.data
+  } catch (error) {
+    console.error('Failed to fetch restaurant info:', error)
+  } finally {
+    await nextTick()
+    checkDescOverflow()
+  }
+})
 
 function handleThemeChange(theme: 'light' | 'dark' | 'system') {
   appStore.setTheme(theme)
@@ -124,16 +202,88 @@ async function handleLogout() {
       <!-- About Modal -->
       <Modal
         :show="showAboutModal"
-        title="关于"
-        size="sm"
+        title="餐厅信息"
+        size="md"
         @close="showAboutModal = false"
       >
         <div class="about-content">
-          <h2 class="app-name">红灯笼食府</h2>
-          <p class="app-version">版本 1.0.0</p>
-          <p class="app-desc">
-            红灯笼食府点餐 & 库存管理系统，为您提供便捷的点餐体验和高效的管理服务。
-          </p>
+          <!-- 品牌区域 -->
+          <div class="about-hero">
+            <div class="about-logo">
+              <img src="/logo.png" alt="红灯笼食府" class="about-logo-img" />
+            </div>
+            <h2 class="about-name">{{ restaurantInfo.name || '红灯笼食府' }}</h2>
+            <p class="about-slogan">传承经典 · 匠心美食</p>
+            <div v-if="restaurantInfo.features && restaurantInfo.features.length" class="about-tags">
+              <span
+                v-for="(tag, index) in restaurantInfo.features"
+                :key="index"
+                class="about-tag"
+              >
+                {{ tag }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 餐厅简介 -->
+          <div
+            v-if="restaurantInfo.description"
+            ref="descRef"
+            class="about-description"
+          >
+            <p :class="{ 'desc-collapsed': descOverflow && !descExpanded }"><span class="about-quote">&ldquo;</span>{{ restaurantInfo.description }}<span class="about-quote">&rdquo;</span></p>
+            <button
+              v-if="descOverflow"
+              class="desc-toggle"
+              @click="descExpanded = !descExpanded"
+            >
+              <component :is="descExpanded ? ChevronUp : ChevronDown" :size="14" />
+              {{ descExpanded ? '收起' : '展开全文' }}
+            </button>
+          </div>
+
+          <!-- 信息列表 -->
+          <div class="about-info-list">
+            <div
+              v-if="restaurantInfo.business_hours?.periods?.length"
+              class="about-info-item"
+            >
+              <div class="about-info-icon">
+                <Clock :size="16" />
+              </div>
+              <div class="about-info-text">
+                <span class="about-info-label">{{ formatDays(restaurantInfo.business_hours.days) }}</span>
+                <span
+                  v-for="(period, pi) in restaurantInfo.business_hours.periods"
+                  :key="pi"
+                  class="about-info-value"
+                >{{ period.open }} - {{ period.close }}</span>
+              </div>
+            </div>
+            <div v-if="restaurantInfo.phone" class="about-info-item">
+              <div class="about-info-icon">
+                <Phone :size="16" />
+              </div>
+              <div class="about-info-text">
+                <span class="about-info-label">联系电话</span>
+                <span class="about-info-value">{{ restaurantInfo.phone }}</span>
+              </div>
+            </div>
+            <div v-if="restaurantInfo.address" class="about-info-item">
+              <div class="about-info-icon">
+                <MapPin :size="16" />
+              </div>
+              <div class="about-info-text">
+                <span class="about-info-label">地址</span>
+                <span class="about-info-value">{{ restaurantInfo.address }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部版本信息 -->
+          <div class="about-footer">
+            <span>系统版本 1.0.0</span>
+          </div>
         </div>
       </Modal>
 
@@ -156,7 +306,10 @@ async function handleLogout() {
 
 <style scoped>
 .settings-page {
-  min-height: 100vh;
+  height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background-color: var(--color-bg-primary);
 }
 
@@ -169,6 +322,7 @@ async function handleLogout() {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+  flex-shrink: 0;
 }
 
 .page-header h1 {
@@ -177,6 +331,8 @@ async function handleLogout() {
 }
 
 .page-content {
+  flex: 1;
+  overflow-y: auto;
   padding: var(--spacing-md);
   display: flex;
   flex-direction: column;
@@ -251,26 +407,179 @@ async function handleLogout() {
 }
 
 .about-content {
-  text-align: center;
-  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
 }
 
-.app-name {
+.about-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--spacing-sm);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.about-logo {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark, #cc3333));
+  border-radius: 50%;
+  color: white;
+  margin-bottom: var(--spacing-xs);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+  overflow: hidden;
+}
+
+.about-logo-img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.about-name {
   font-family: var(--font-heading);
   font-size: 1.5rem;
-  margin-bottom: var(--spacing-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
 }
 
-.app-version {
+.about-slogan {
   font-size: 0.875rem;
   color: var(--color-text-muted);
-  margin-bottom: var(--spacing-md);
+  letter-spacing: 0.1em;
+  margin: 0;
 }
 
-.app-desc {
+.about-description {
+  padding: var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-lg);
+}
+
+.about-description p {
   font-size: 0.875rem;
+  line-height: 1.8;
   color: var(--color-text-secondary);
-  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: 'KaiTi', 'STKaiti', '楷体', serif;
+}
+
+.desc-collapsed {
+  max-height: calc(0.875rem * 1.8 * 3);
+  overflow: hidden;
+}
+
+.desc-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  margin: 0 auto;
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: var(--spacing-xs) 0 0;
+}
+
+.about-quote {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  line-height: 1;
+}
+
+.about-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.about-info-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.about-info-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-primary);
+  border-radius: 50%;
+  color: white;
+  flex-shrink: 0;
+}
+
+.about-info-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.about-info-label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.about-info-value {
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.about-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  justify-content: center;
+  margin-top: var(--spacing-sm);
+}
+
+.about-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: 0.8125rem;
+  color: var(--color-primary);
+  background-color: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}
+
+:global([data-theme="dark"]) .about-tag {
+  background-color: rgba(220, 38, 38, 0.15);
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.about-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.about-footer span {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .confirm-text {

@@ -9,7 +9,7 @@ import type { Order } from '@/types'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
-import { ArrowLeft, Store, Clock, Phone, User, QrCode, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { ArrowLeft, Store, Clock, Phone, User, QrCode, ChevronDown, ChevronUp, XCircle, Info, CheckCircle } from 'lucide-vue-next'
 import QRCode from 'qrcode'
 import JsBarcode from 'jsbarcode'
 
@@ -30,14 +30,66 @@ const barcodeDataUrl = ref('')
 // 菜单收起/展开状态
 const ITEMS_COLLAPSE_THRESHOLD = 3
 const itemsExpanded = ref(false)
+
+// 修改记录 diff 聚合
+const modificationsDiff = computed(() => {
+  if (!order.value?.modifications?.length) return []
+  const map = new Map<string, { key: string; dish_name: string; spec: string | null; quantity: number; unit_price: number; type: 'add' | 'remove' }>()
+  for (const m of order.value.modifications) {
+    const key = `${m.dish_id}-${m.spec || ''}`
+    const existing = map.get(key)
+    const delta = existing ? existing.quantity + m.quantity_delta : m.quantity_delta
+    map.set(key, { key, dish_name: m.dish_name, spec: m.spec, quantity: delta, unit_price: m.unit_price, type: delta >= 0 ? 'add' : 'remove' })
+  }
+  const result = [...map.values()].filter(d => d.quantity !== 0)
+  // 新增靠上，删减靠下
+  result.sort((a, b) => (a.type === 'add' ? -1 : 1) - (b.type === 'add' ? -1 : 1))
+  return result
+})
+
+// 菜品增减映射，用于在菜品列表中显示 +/-n 标签
+const itemDeltaMap = computed(() => {
+  const map = new Map<string, { delta: number; type: 'add' | 'remove' }>()
+  for (const m of modificationsDiff.value) {
+    map.set(m.key, { delta: Math.abs(m.quantity), type: m.type })
+  }
+  return map
+})
+
+// 被完全移除的菜品（不在当前 items 中，但在 modificationsDiff 中有 remove 记录）
+// 转为 OrderItem 兼容形状，便于与当前菜品列表合并显示
+const removedDiffItems = computed(() => {
+  if (!order.value || !modificationsDiff.value.length) return []
+  const currentItemKeys = new Set(
+    order.value.items.map(i => `${i.dish_id}-${i.spec || ''}`)
+  )
+  return modificationsDiff.value
+    .filter(m => m.type === 'remove' && !currentItemKeys.has(m.key))
+    .map(m => ({
+      id: `__removed__${m.key}`,
+      order_id: order.value!.id,
+      dish_id: m.key.split('-')[0],
+      dish_name: m.dish_name,
+      quantity: Math.abs(m.quantity),
+      unit_price: m.unit_price,
+      subtotal: Math.abs(m.quantity) * m.unit_price,
+      spec: m.spec,
+    }))
+})
+
 const displayItems = computed(() => {
   if (!order.value) return []
-  if (itemsExpanded.value || order.value.items.length <= ITEMS_COLLAPSE_THRESHOLD) {
-    return order.value.items
-  }
-  return order.value.items.slice(0, ITEMS_COLLAPSE_THRESHOLD)
+  const all = [...order.value.items, ...removedDiffItems.value]
+  if (itemsExpanded.value || all.length <= ITEMS_COLLAPSE_THRESHOLD) return all
+  return all.slice(0, ITEMS_COLLAPSE_THRESHOLD)
 })
-const hasMoreItems = computed(() => (order.value?.items.length ?? 0) > ITEMS_COLLAPSE_THRESHOLD)
+const hasMoreItems = computed(() => {
+  const total = (order.value?.items.length ?? 0) + removedDiffItems.value.length
+  return total > ITEMS_COLLAPSE_THRESHOLD
+})
+
+// 修改记录折叠状态
+const modificationsExpanded = ref(false)
 
 const canCancel = computed(() => {
   if (!order.value || order.value.status !== 'pending') return false
@@ -67,6 +119,17 @@ const statusColor = computed(() => {
     cancelled: 'var(--color-error)',
   }
   return colorMap[order.value.status] || 'var(--color-text-muted)'
+})
+
+const statusIcon = computed(() => {
+  if (!order.value) return Clock
+  const iconMap: Record<string, any> = {
+    pending: Clock,
+    confirmed: Info,
+    completed: CheckCircle,
+    cancelled: XCircle,
+  }
+  return iconMap[order.value.status] || Clock
 })
 
 const canAddMore = computed(() => {
@@ -179,8 +242,10 @@ function handleAddMore() {
 }
 
 function handleBack() {
-  cartStore.clearCart()
-  tableStore.clearSelection()
+  if (!order.value || !['pending', 'confirmed'].includes(order.value.status)) {
+    cartStore.clearCart()
+    tableStore.clearSelection()
+  }
   router.push('/')
 }
 
@@ -250,6 +315,7 @@ onUnmounted(() => {
       </header>
 
       <!-- Content -->
+      <div class="detail-content">
       <div v-if="loading" class="loading-container">
         <div class="loading-spinner"></div>
       </div>
@@ -262,7 +328,7 @@ onUnmounted(() => {
           <h2 class="not-found-title">订单不存在</h2>
           <p class="not-found-desc">该订单已被移除或不存在</p>
           <button class="btn btn-primary" @click="handleBack">
-            返回首页
+            去点餐
           </button>
         </div>
       </template>
@@ -270,6 +336,9 @@ onUnmounted(() => {
       <template v-else-if="order">
         <!-- Status -->
         <div class="status-section">
+          <div class="status-icon-wrapper" :style="{ backgroundColor: statusColor }">
+            <component :is="statusIcon" :size="40" color="white" />
+          </div>
           <span class="status-badge" :style="{ backgroundColor: statusColor }">
             {{ statusText }}
           </span>
@@ -293,11 +362,33 @@ onUnmounted(() => {
 
         <!-- Items -->
         <div class="items-card">
-          <div class="card-header">菜单</div>
+          <div class="card-header">
+            <span>菜单</span>
+            <button v-if="modificationsDiff.length > 0" class="mod-toggle-btn" @click="modificationsExpanded = !modificationsExpanded">
+              <span>修改记录</span>
+              <component :is="modificationsExpanded ? ChevronUp : ChevronDown" :size="14" />
+            </button>
+          </div>
+          <!-- 修改记录 diff（折叠） -->
+          <div v-if="modificationsExpanded && modificationsDiff.length > 0" class="diff-list">
+            <div v-for="m in modificationsDiff" :key="m.key" class="diff-row" :class="m.type">
+              <span class="diff-sign">{{ m.type === 'add' ? '+' : '-' }}</span>
+              <span class="diff-name">{{ m.dish_name }}</span>
+              <span v-if="m.spec" class="diff-spec">({{ m.spec }})</span>
+              <span class="diff-qty">x{{ Math.abs(m.quantity) }}</span>
+              <span class="diff-price">{{ (Math.abs(m.quantity) * m.unit_price).toFixed(2) }}元</span>
+            </div>
+          </div>
           <div class="items-list">
-            <div v-for="item in displayItems" :key="item.id" class="item-row">
+            <div v-for="item in displayItems" :key="item.id" class="item-row" :class="{ 'item-removed': item.id.startsWith('__removed__') }">
               <span class="item-name">{{ item.dish_name }}</span>
               <span v-if="item.spec" class="item-spec">({{ item.spec }})</span>
+              <span
+                v-if="!item.id.startsWith('__removed__') && itemDeltaMap.get(`${item.dish_id}-${item.spec || ''}`)"
+                class="item-delta-badge"
+                :class="itemDeltaMap.get(`${item.dish_id}-${item.spec || ''}`)!.type"
+              >{{ itemDeltaMap.get(`${item.dish_id}-${item.spec || ''}`)!.type === 'add' ? '+' : '-' }}{{ itemDeltaMap.get(`${item.dish_id}-${item.spec || ''}`)!.delta }}</span>
+              <span v-else-if="item.id.startsWith('__removed__')" class="item-delta-badge remove">-{{ item.quantity }}</span>
               <span class="item-qty">x{{ item.quantity }}</span>
               <span class="item-price">{{ item.subtotal }}元</span>
             </div>
@@ -308,7 +399,7 @@ onUnmounted(() => {
             @click="itemsExpanded = !itemsExpanded"
           >
             <component :is="itemsExpanded ? ChevronUp : ChevronDown" :size="14" />
-            {{ itemsExpanded ? '收起' : `展开全部 (${order?.items.length ?? 0}项)` }}
+            {{ itemsExpanded ? '收起' : `展开全部 (${(order?.items.length ?? 0) + removedDiffItems.length}项)` }}
           </button>
           <div class="card-total">
             <span>总计：</span>
@@ -340,10 +431,11 @@ onUnmounted(() => {
             取消订单
           </button>
           <button v-if="canAddMore" class="btn btn-primary" @click="handleAddMore">
-            加菜
+            修改订单
           </button>
         </div>
       </template>
+      </div>
 
       <!-- QR Code Modal -->
       <Modal
@@ -374,9 +466,11 @@ onUnmounted(() => {
 
 <style scoped>
 .order-detail-page {
-  min-height: 100vh;
+  height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background-color: var(--color-bg-primary);
-  padding-bottom: 80px;
 }
 
 .detail-header {
@@ -388,11 +482,18 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+  flex-shrink: 0;
+}
+
+.detail-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: var(--spacing-lg);
 }
 
 .back-btn {
   position: absolute;
-  left: var(--spacing-lg);
+  left: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -433,8 +534,19 @@ onUnmounted(() => {
 
 .status-section {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   padding: var(--spacing-xl);
+}
+
+.status-icon-wrapper {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--spacing-md);
 }
 
 .status-badge {
@@ -453,12 +565,33 @@ onUnmounted(() => {
 }
 
 .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-text-secondary);
   margin-bottom: var(--spacing-md);
   padding-bottom: var(--spacing-sm);
   border-bottom: 1px solid var(--color-border-light);
+}
+
+.mod-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-tertiary);
+  transition: all var(--transition-fast);
+}
+
+.mod-toggle-btn:hover {
+  color: var(--color-primary);
+  background-color: var(--color-border-light);
 }
 
 .info-row {
@@ -520,25 +653,52 @@ onUnmounted(() => {
 .item-row {
   display: flex;
   align-items: center;
+  gap: var(--spacing-sm);
   font-size: 0.875rem;
-}
-
-.item-name {
-  flex: 1;
 }
 
 .item-spec {
   color: var(--color-text-muted);
-  margin-right: var(--spacing-sm);
 }
 
 .item-qty {
   color: var(--color-text-muted);
-  margin-right: var(--spacing-md);
 }
 
 .item-price {
+  margin-left: auto;
   color: var(--color-primary);
+}
+
+.item-removed {
+  opacity: 0.6;
+}
+
+.item-removed .item-name {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
+}
+
+.item-delta-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: var(--radius-full);
+  line-height: 1.4;
+}
+
+.item-delta-badge.add {
+  background-color: rgba(46, 160, 67, 0.12);
+  color: var(--color-success);
+}
+
+.item-delta-badge.remove {
+  background-color: rgba(248, 81, 73, 0.12);
+  color: var(--color-error);
 }
 
 .items-toggle {
@@ -556,6 +716,58 @@ onUnmounted(() => {
 
 .items-toggle:hover {
   opacity: 0.7;
+}
+
+/* 修改记录 diff */
+.diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px dashed var(--color-border-light);
+}
+
+.diff-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 0.8rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-family: monospace;
+}
+
+.diff-row.add {
+  background-color: rgba(46, 160, 67, 0.08);
+  color: var(--color-success);
+}
+
+.diff-row.remove {
+  background-color: rgba(248, 81, 73, 0.08);
+  color: var(--color-error);
+}
+
+.diff-sign {
+  width: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.diff-spec {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+.diff-qty {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.diff-price {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-weight: 500;
 }
 
 .card-total {
@@ -642,6 +854,7 @@ onUnmounted(() => {
 }
 
 .not-found-section {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -652,8 +865,15 @@ onUnmounted(() => {
 }
 
 .not-found-icon {
-  color: var(--color-text-muted);
-  opacity: 0.5;
+  width: 100px;
+  height: 100px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--spacing-xl);
+  color: var(--color-primary);
 }
 
 .not-found-title {

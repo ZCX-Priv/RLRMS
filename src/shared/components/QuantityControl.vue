@@ -87,6 +87,19 @@ function createRipple(e: MouseEvent) {
   </div>
 </template>
 
+<style>
+.ripple-effect {
+  position: absolute;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.4);
+  -webkit-transform: scale(0);
+  transform: scale(0);
+  -webkit-animation: ripple var(--duration-slow) var(--ease-out);
+  animation: ripple var(--duration-slow) var(--ease-out);
+  pointer-events: none;
+}
+</style>
+
 <style scoped>
 .quantity-control {
   display: inline-flex;
@@ -114,7 +127,10 @@ function createRipple(e: MouseEvent) {
   border-radius: 50%;
   background-color: var(--color-bg-secondary);
   color: var(--color-text-primary);
-  transition: all var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+  transition: background-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              opacity var(--duration-fast) var(--ease-out);
   position: relative;
   overflow: hidden;
 }
@@ -122,37 +138,6 @@ function createRipple(e: MouseEvent) {
 .quantity-btn:hover:not(:disabled) {
   background-color: var(--color-primary);
   color: white;
-  transform: scale(1.1);
-}
-
-.quantity-btn:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.ripple-effect {
-  position: absolute;
-  border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.4);
-  -webkit-transform: scale(0);
-  transform: scale(0);
-  -webkit-animation: ripple var(--duration-slow) var(--ease-out);
-  animation: ripple var(--duration-slow) var(--ease-out);
-  pointer-events: none;
-}
-
-@-webkit-keyframes ripple {
-  to {
-    -webkit-transform: scale(4);
-    transform: scale(4);
-    opacity: 0;
-  }
-}
-
-@keyframes ripple {
-  to {
-    transform: scale(4);
-    opacity: 0;
-  }
 }
 
 .quantity-btn-disabled {
@@ -161,10 +146,10 @@ function createRipple(e: MouseEvent) {
 
 .quantity-value {
   min-width: 24px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 500;
-  -webkit-transition: transform var(--duration-fast) var(--ease-bounce);
-  transition: transform var(--duration-fast) var(--ease-bounce);
 }
 
 /* 数字弹跳动画 */

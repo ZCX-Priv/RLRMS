@@ -1,8 +1,15 @@
 import { Router } from 'express'
-import { all, get, run } from '../db/index.js'
-import { v4 as uuidv4 } from 'uuid'
+import { all, get } from '../db/index.js'
+import { cacheGet, cacheSet, cacheInvalidate, CACHE_KEYS } from '../utils/cache.js'
 
 export const dishesRouter = Router()
+
+// 导出缓存失效函数，供 admin 路由在数据变更时调用
+export function invalidateDishesCache() {
+  cacheInvalidate(CACHE_KEYS.DISHES_HOME)
+  cacheInvalidate(CACHE_KEYS.DISHES_LIST)
+  cacheInvalidate(CACHE_KEYS.CATEGORIES)
+}
 
 function safeJsonParse<T>(jsonString: string | null | undefined, defaultValue: T): T {
   if (!jsonString) return defaultValue
@@ -18,6 +25,12 @@ function safeJsonParse<T>(jsonString: string | null | undefined, defaultValue: T
 dishesRouter.get('/', (req, res) => {
   try {
     const { category } = req.query
+    const cacheKey = category ? `${CACHE_KEYS.DISHES_LIST}:${category}` : CACHE_KEYS.DISHES_LIST
+    const cached = cacheGet(cacheKey)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
+
     let query = `
       SELECT d.id, d.name, d.price, d.image_url, d.category_id, c.name as category_name, d.status
       FROM dishes d 
@@ -43,6 +56,7 @@ dishesRouter.get('/', (req, res) => {
       status: string
     }>(query, params)
     
+    cacheSet(cacheKey, dishes)
     res.json({ success: true, data: dishes })
   } catch (error) {
     console.error('Error fetching dishes:', error)
@@ -54,6 +68,11 @@ dishesRouter.get('/', (req, res) => {
 // IMPORTANT: This must be defined BEFORE /:id to avoid route conflicts
 dishesRouter.get('/home-data', (req, res) => {
   try {
+    const cached = cacheGet(CACHE_KEYS.DISHES_HOME)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
+
     const categories = all<{
       id: string
       name: string
@@ -84,12 +103,12 @@ dishesRouter.get('/home-data', (req, res) => {
       specs: JSON.parse(dish.specs || '[]'),
     }))
 
+    const data = { categories, dishes }
+    cacheSet(CACHE_KEYS.DISHES_HOME, data)
+
     res.json({
       success: true,
-      data: {
-        categories,
-        dishes
-      }
+      data
     })
   } catch (error) {
     console.error('Error fetching home data:', error)
@@ -141,7 +160,12 @@ dishesRouter.get('/search/query', (req, res) => {
 // IMPORTANT: This must be defined BEFORE /:id to avoid route conflicts
 dishesRouter.get('/categories/all', (req, res) => {
   try {
+    const cached = cacheGet(CACHE_KEYS.CATEGORIES)
+    if (cached) {
+      return res.json({ success: true, data: cached })
+    }
     const categories = all('SELECT * FROM categories ORDER BY sort_order')
+    cacheSet(CACHE_KEYS.CATEGORIES, categories)
     res.json({ success: true, data: categories })
   } catch (error) {
     console.error('Error fetching categories:', error)

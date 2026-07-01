@@ -1,0 +1,325 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: Q0DeR-MaG1C-BrAnCh-Fo2-NoN-GiT-Or-No-C0MmIt
+nodes_managed: true
+exported_at: "2026-06-21T09:36:06Z"
+modules:
+    "":
+        dir_name: 红灯笼餐厅全栈一体化平台
+        title: 红灯笼餐厅全栈一体化平台
+        scope:
+            - README.md
+            - package.json
+            - tsconfig.json
+            - tsconfig.app.json
+            - tsconfig.node.json
+            - vite.config.ts
+            - index.html
+            - .dockerignore
+            - Dockerfile
+            - docker-compose.yml
+            - nginx.conf
+            - apache.conf
+            - ecosystem.config.cjs
+            - install.bat
+            - install.sh
+            - start.bat
+            - start.sh
+            - stop.bat
+            - stop.sh
+            - scripts/
+            - spec/
+            - .trae/
+            - .env
+            - .trae\documents\DebugToolsPanel表格分割线显式与防止页面滚动计划.md
+            - .trae\documents\DebugToolsPanel表格列宽拖动与省略计划.md
+            - .trae\documents\DebugToolsPanel表格限宽与数据列分隔线计划.md
+            - .trae\documents\DebugToolsPanel表格限宽为视口宽度计划.md
+            - .trae\documents\UI优化-头像浅色样式-菜单收起-桌位翻页.md
+            - .trae\documents\debug-sidebar-collapse-plan.md
+            - .trae\documents\debug-sidebar-fix-plan.md
+            - .trae\documents\debug-sidebar-refinement-plan.md
+            - .trae\documents\debug-sidebar-rounded-line-plan.md
+            - .trae\documents\debug-sidebar-spacing-plan.md
+            - .trae\documents\debug-sidebar-title-plan.md
+            - .trae\documents\fix-api-html-response-error.md
+            - .trae\documents\fix-debug-panel-overflow-viewport.md
+            - .trae\documents\fix-debug-panel-sql-layout-plan.md
+            - .trae\documents\toast堆叠优化计划.md
+            - .trae\documents\一键生产环境安装脚本.md
+            - .trae\documents\为购物车栏未展开态添加边框并统一展开态边框方案.md
+            - .trae\documents\修复购物车栏展开时的边框线条问题.md
+            - .trae\documents\修改设置页面标题和侧边栏hover效果.md
+            - .trae\documents\展开态为整个购物车卡片添加阴影.md
+            - .trae\documents\替换侧边栏和空状态图标.md
+            - .trae\documents\桌位区高度固定-展开按钮样式简化.md
+            - .trae\documents\桌位翻页区域高度完全固定.md
+            - .trae\documents\模态窗横向矩形改造计划.md
+            - .trae\documents\移除空状态渐变背景并替换侧边栏图标.md
+            - .trae\documents\解决闪烁问题计划.md
+            - .trae\documents\调试工具开关点击行为与侧边栏响应式修复.md
+            - .trae\documents\调试工具开关确认弹窗与实时响应.md
+            - .trae\documents\调试工具开关闭闭卡死与toast修复.md
+            - .trae\documents\调试工具折叠菜单改造计划.md
+            - .trae\specs\add-data-import-export\checklist.md
+            - .trae\specs\add-data-import-export\spec.md
+            - .trae\specs\add-data-import-export\tasks.md
+            - .trae\specs\add-delete-confirmation\checklist.md
+            - .trae\specs\add-delete-confirmation\spec.md
+            - .trae\specs\add-delete-confirmation\tasks.md
+            - .trae\specs\code-review-fixes\checklist.md
+            - .trae\specs\code-review-fixes\spec.md
+            - .trae\specs\code-review-fixes\tasks.md
+            - .trae\specs\enhance-transitions\checklist.md
+            - .trae\specs\enhance-transitions\spec.md
+            - .trae\specs\enhance-transitions\tasks.md
+            - .trae\specs\fix-dish-image-cleanup\checklist.md
+            - .trae\specs\fix-dish-image-cleanup\spec.md
+            - .trae\specs\fix-dish-image-cleanup\tasks.md
+            - .trae\specs\fix-login-session-timeout\checklist.md
+            - .trae\specs\fix-login-session-timeout\spec.md
+            - .trae\specs\fix-login-session-timeout\tasks.md
+            - .trae\specs\fix-type-safety-api-issues\checklist.md
+            - .trae\specs\fix-type-safety-api-issues\spec.md
+            - .trae\specs\fix-type-safety-api-issues\tasks.md
+            - .trae\specs\fix-typescript-errors\checklist.md
+            - .trae\specs\fix-typescript-errors\spec.md
+            - .trae\specs\fix-typescript-errors\tasks.md
+            - .trae\specs\implement-cookie-auth\checklist.md
+            - .trae\specs\implement-cookie-auth\spec.md
+            - .trae\specs\implement-cookie-auth\tasks.md
+            - .trae\specs\implement-lazy-loading\checklist.md
+            - .trae\specs\implement-lazy-loading\spec.md
+            - .trae\specs\implement-lazy-loading\tasks.md
+            - .trae\specs\migrate-to-indexeddb\checklist.md
+            - .trae\specs\migrate-to-indexeddb\spec.md
+            - .trae\specs\migrate-to-indexeddb\tasks.md
+            - .trae\specs\performance-optimization\checklist.md
+            - .trae\specs\performance-optimization\spec.md
+            - .trae\specs\performance-optimization\tasks.md
+            - .vscode\extensions.json
+            - LICENSE
+            - package-lock.json
+            - public\background.png
+            - public\logo.png
+            - public\sources\1771214865965-737457577.webp
+            - public\sources\1771214890285-549054037.webp
+            - public\sources\1771214900635-522427480.webp
+            - public\sources\1771214906053-947217340.webp
+            - public\sources\1771214961364-283827396.webp
+            - public\sources\1771214975518-565678826.webp
+            - public\sources\1771214986587-115160968.webp
+            - public\sources\1771215004264-366384260.webp
+            - public\sources\1771215021676-652645571.webp
+            - public\sources\1771215036630-955600151.webp
+            - public\sources\1771215049170-718425099.webp
+            - public\sources\1771215188755-566838733.webp
+            - public\sources\1771215218455-492504200.webp
+            - public\sources\1771215237679-638437387.webp
+            - public\sources\1771215258160-466461309.webp
+            - public\sources\1771215281311-4920920.webp
+            - public\sources\1771215371114-851620442.webp
+            - public\sources\1771215395134-118942916.webp
+            - public\sources\1771215419907-556270748.webp
+            - public\sources\1771215442200-321184814.webp
+            - public\sources\1771215466029-222228593.webp
+            - public\sources\1771215488935-443053765.webp
+            - public\sources\1771215510996-290024688.webp
+            - public\sources\1771215535179-220913842.webp
+            - public\sources\1771215554933-21669781.webp
+            - public\sources\1771215577649-574227800.webp
+            - public\sources\1771215599194-546250415.webp
+            - public\sources\1771215621486-725100588.webp
+            - public\sources\1771215643800-82200678.webp
+            - public\sources\1771215668308-540517529.webp
+            - public\sources\1771215692139-114928468.webp
+            - public\sources\1771215715419-683219308.webp
+            - public\sources\1771215769360-992844690.webp
+            - public\sources\1771215789727-902454187.webp
+            - public\sources\1771215811539-636156009.webp
+            - public\sources\1771215836422-257313268.webp
+            - public\sources\1771215858350-130785832.webp
+            - public\sources\1771215881954-601887359.webp
+            - public\sources\1771215902580-105995706.webp
+            - public\sources\1771215926660-177800226.webp
+            - scripts\build-production.mjs
+            - server\data\restaurant.db
+            - server\src\db\index.ts
+            - server\src\db\init.ts
+            - server\src\dev-server.ts
+            - server\src\dev.ts
+            - server\src\index.ts
+            - server\src\routes\admin.ts
+            - server\src\routes\auth.ts
+            - server\src\routes\dishes.ts
+            - server\src\routes\index.ts
+            - server\src\routes\orders.ts
+            - server\src\routes\tables.ts
+            - server\src\types\sql.js.d.ts
+            - server\src\utils\cache.ts
+            - server\src\utils\format.ts
+            - server\src\utils\jwt.ts
+            - server\src\utils\memberNo.ts
+            - server\src\utils\sse.ts
+            - server\src\validators\index.ts
+            - server\tsconfig.json
+            - spec\ASCII设计图.txt
+            - spec\PRD（初版）.txt
+            - src\App.vue
+            - src\admin\components\DebugToolsPanel.vue
+            - src\admin\views\DashboardView.vue
+            - src\admin\views\DebugView.vue
+            - src\admin\views\DishesView.vue
+            - src\admin\views\InventoryView.vue
+            - src\admin\views\LayoutView.vue
+            - src\admin\views\LoginView.vue
+            - src\admin\views\NotFoundView.vue
+            - src\admin\views\OrdersView.vue
+            - src\admin\views\SettingsView.vue
+            - src\admin\views\TablesView.vue
+            - src\admin\views\UsersView.vue
+            - src\api\index.ts
+            - src\client\components\CartDrawer.vue
+            - src\client\components\ClientLayout.vue
+            - src\client\components\ClientLoginModal.vue
+            - src\client\components\DishCard.vue
+            - src\client\components\TableSelectModal.vue
+            - src\client\views\DishDetailView.vue
+            - src\client\views\HomeView.vue
+            - src\client\views\NotFoundView.vue
+            - src\client\views\OrderConfirmView.vue
+            - src\client\views\OrderDetailView.vue
+            - src\client\views\OrderQRCodeView.vue
+            - src\client\views\OrdersView.vue
+            - src\client\views\SearchView.vue
+            - src\client\views\SettingsView.vue
+            - src\main.ts
+            - src\router\index.ts
+            - src\shared\components\ConfirmDialog.vue
+            - src\shared\components\Loading.vue
+            - src\shared\components\Modal.vue
+            - src\shared\components\QuantityControl.vue
+            - src\shared\components\Skeleton.vue
+            - src\shared\components\Toast.vue
+            - src\shared\composables\useDragReorder.ts
+            - src\shared\composables\useOrderPolling.ts
+            - src\shared\composables\useStaggeredAnimation.ts
+            - src\stores\app.ts
+            - src\stores\auth.ts
+            - src\stores\cart.ts
+            - src\stores\clientAuth.ts
+            - src\stores\table.ts
+            - src\style.css
+            - src\types\index.ts
+            - src\utils\storage.ts
+            - 菜品原料汇总表.xlsx
+        source_files: []
+        children:
+            - backend
+            - frontend
+        depends_on: []
+        related_to: []
+    backend:
+        dir_name: 红灯笼餐厅管理系统后端服务
+        title: 红灯笼餐厅管理系统后端服务
+        scope:
+            - server/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: frontend
+    build_system:
+        dir_name: 红灯笼餐厅全栈构建与部署体系
+        title: 红灯笼餐厅全栈构建与部署体系
+        scope: []
+        source_files:
+            - package.json
+            - vite.config.ts
+            - Dockerfile
+            - docker-compose.yml
+            - scripts/build-production.mjs
+            - ecosystem.config.cjs
+            - install.sh
+            - start.sh
+        children: []
+        depends_on: []
+        related_to: []
+    configuration_system:
+        dir_name: 红灯笼餐厅配置系统：环境变量与代码驱动架构
+        title: 红灯笼餐厅配置系统：环境变量与代码驱动架构
+        scope: []
+        source_files:
+            - .env
+            - server/src/index.ts
+            - vite.config.ts
+            - ecosystem.config.cjs
+            - server/src/utils/jwt.ts
+            - server/src/db/init.ts
+            - scripts/build-production.mjs
+        children: []
+        depends_on: []
+        related_to: []
+    dependency_management:
+        dir_name: 红灯笼餐厅平台依赖管理策略
+        title: 红灯笼餐厅平台依赖管理策略
+        scope: []
+        source_files:
+            - package.json
+            - package-lock.json
+            - Dockerfile
+            - scripts/build-production.mjs
+            - server/tsconfig.json
+            - tsconfig.json
+        children: []
+        depends_on: []
+        related_to: []
+    error_handling:
+        dir_name: 错误处理与异常管理策略
+        title: 错误处理与异常管理策略
+        scope: []
+        source_files:
+            - server/src/index.ts
+            - src/api/index.ts
+            - server/src/validators/index.ts
+            - server/src/routes/orders.ts
+            - server/src/routes/auth.ts
+            - src/stores/auth.ts
+        children: []
+        depends_on: []
+        related_to: []
+    frontend:
+        dir_name: 红灯笼餐厅管理系统前端应用
+        title: 红灯笼餐厅管理系统前端应用
+        scope:
+            - src/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: backend
+    frontend_style:
+        dir_name: 红灯笼主题设计系统与CSS架构
+        title: 红灯笼主题设计系统与CSS架构
+        scope: []
+        source_files:
+            - src/style.css
+            - src/stores/app.ts
+            - index.html
+            - vite.config.ts
+        children: []
+        depends_on: []
+        related_to: []
+    logging_system:
+        dir_name: 基于原生 Console 与构建时剥离的日志策略
+        title: 基于原生 Console 与构建时剥离的日志策略
+        scope: []
+        source_files:
+            - vite.config.ts
+            - server/src/index.ts
+            - server/src/db/init.ts
+            - scripts/build-production.mjs
+        children: []
+        depends_on: []
+        related_to: []

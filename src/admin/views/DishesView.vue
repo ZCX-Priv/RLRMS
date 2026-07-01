@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, defineAsyncComponent } from 'vue'
+import { ref, onMounted, onUnmounted, computed, defineAsyncComponent } from 'vue'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
 import type { Dish, Category } from '@/types'
+import { formatPrice } from '@/utils/format'
 import draggable from 'vuedraggable'
 
 const Modal = defineAsyncComponent(() => import('@/shared/components/Modal.vue'))
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { Plus, Edit, Trash2, Image, ChefHat, Upload, X, GripVertical, Search } from 'lucide-vue-next'
+import { Plus, Edit, Trash2, Image, UtensilsCrossed, Upload, X, GripVertical, Search, ChevronDown, Check } from 'lucide-vue-next'
 
 const appStore = useAppStore()
 
@@ -21,9 +22,19 @@ const editingDish = ref<Dish | null>(null)
 const uploading = ref(false)
 const selectedCategory = ref<string>('')
 const searchQuery = ref('')
+
+const actionDropdownRef = ref<HTMLElement | null>(null)
+const showActionDropdown = ref(false)
+const editMode = ref(false)
+const selectedIds = ref<Set<string>>(new Set())
+const showClearConfirm = ref(false)
+const showBatchDeleteConfirm = ref(false)
+const showProgressModal = ref(false)
+const batchProgress = ref(0)
+const batchTotal = ref(0)
 const formData = ref({
   name: '',
-  price: 0,
+  price: '' as string | number,
   category_id: null as string | null,
   description: '',
   tags: [] as string[],
@@ -65,6 +76,11 @@ const filteredDishes = computed({
     dishes.value = [...otherDishes, ...value]
   }
 })
+
+const isAllSelected = computed(() =>
+  filteredDishes.value.length > 0 &&
+  filteredDishes.value.every(d => selectedIds.value.has(d.id))
+)
 
 async function onDishesDragEnd(event: { oldIndex: number; newIndex: number }) {
   if (event.oldIndex === event.newIndex) return
@@ -124,7 +140,7 @@ function openAddModal() {
   editingDish.value = null
   formData.value = {
     name: '',
-    price: 0,
+    price: '' as string | number,
     category_id: null,
     description: '',
     tags: [],
@@ -139,7 +155,7 @@ function openEditModal(dish: Dish) {
   editingDish.value = dish
   formData.value = {
     name: dish.name,
-    price: dish.price,
+    price: String(dish.price),
     category_id: dish.category_id || null,
     description: dish.description || '',
     tags: dish.tags || [],
@@ -326,8 +342,96 @@ function removeCustomTag(tag: string) {
   }
 }
 
+function handleClickOutside(e: MouseEvent) {
+  if (showActionDropdown.value && actionDropdownRef.value &&
+      !actionDropdownRef.value.contains(e.target as Node)) {
+    showActionDropdown.value = false
+  }
+}
+
+function enterEditMode() {
+  showActionDropdown.value = false
+  editMode.value = true
+  selectedIds.value.clear()
+}
+
+function exitEditMode() {
+  editMode.value = false
+  selectedIds.value.clear()
+}
+
+function toggleSelect(id: string) {
+  if (selectedIds.value.has(id)) {
+    selectedIds.value.delete(id)
+  } else {
+    selectedIds.value.add(id)
+  }
+}
+
+function toggleSelectAll() {
+  if (isAllSelected.value) {
+    filteredDishes.value.forEach(d => selectedIds.value.delete(d.id))
+  } else {
+    filteredDishes.value.forEach(d => selectedIds.value.add(d.id))
+  }
+}
+
+function requestClearAll() {
+  showActionDropdown.value = false
+  showClearConfirm.value = true
+}
+
+async function confirmBatchDelete() {
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) return
+  showBatchDeleteConfirm.value = false
+  batchTotal.value = ids.length
+  batchProgress.value = 0
+  showProgressModal.value = true
+  let failed = 0
+  try {
+    for (const id of ids) {
+      try {
+        await api.deleteDish(id)
+      } catch (e) {
+        console.error('Failed to delete dish:', id, e)
+        failed++
+      }
+      batchProgress.value++
+    }
+    if (failed === 0) {
+      appStore.showToast(`已删除 ${ids.length} 项`, 'success')
+    } else {
+      appStore.showToast(`已删除 ${ids.length - failed} 项，失败 ${failed} 项`, 'error')
+    }
+  } finally {
+    showProgressModal.value = false
+    exitEditMode()
+    fetchData(false)
+  }
+}
+
+async function confirmClearAll() {
+  const ids = dishes.value.map(d => d.id)
+  try {
+    await Promise.all(ids.map(id => api.deleteDish(id)))
+    appStore.showToast('已清空全部菜品', 'success')
+  } catch (error) {
+    console.error('Failed to clear dishes:', error)
+    appStore.showToast('清空失败', 'error')
+  } finally {
+    showClearConfirm.value = false
+    fetchData(false)
+  }
+}
+
 onMounted(() => {
   fetchData()
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 
@@ -343,10 +447,47 @@ onMounted(() => {
           placeholder="搜索菜品..."
         />
       </div>
-      <button class="btn btn-primary" @click="openAddModal">
-        <Plus :size="18" />
-        添加菜品
-      </button>
+      <div v-if="!editMode" ref="actionDropdownRef" class="action-dropdown-wrapper">
+        <button class="btn btn-primary action-main-btn" @click="openAddModal">
+          <Plus :size="18" />
+          添加菜品
+        </button>
+        <span class="action-divider"></span>
+        <button
+          class="btn btn-primary action-toggle-btn"
+          @click="showActionDropdown = !showActionDropdown"
+        >
+          <ChevronDown :size="14" />
+        </button>
+        <div v-if="showActionDropdown" class="action-dropdown-menu">
+          <button class="action-dropdown-item" @click="enterEditMode">
+            <Edit :size="14" />
+            编辑
+          </button>
+          <button class="action-dropdown-item action-dropdown-danger" @click="requestClearAll">
+            <Trash2 :size="14" />
+            清空
+          </button>
+        </div>
+      </div>
+      <div v-else class="edit-toolbar">
+        <label class="select-all-checkbox" @click.prevent="toggleSelectAll">
+          <span class="item-checkbox" :class="{ checked: isAllSelected }">
+            <Check :size="14" />
+          </span>
+          全选
+        </label>
+        <span class="selected-count">已选 {{ selectedIds.size }} 项</span>
+        <button
+          class="btn btn-danger btn-sm"
+          :disabled="selectedIds.size === 0"
+          @click="showBatchDeleteConfirm = true"
+        >
+          <Trash2 :size="14" />
+          删除选中
+        </button>
+        <button class="btn btn-secondary btn-sm" @click="exitEditMode">取消</button>
+      </div>
     </div>
 
     <div class="category-tabs">
@@ -392,7 +533,7 @@ onMounted(() => {
 
     <div v-else-if="initialized && filteredDishes.length === 0" class="empty-state">
       <div class="empty-icon">
-        <ChefHat :size="64" />
+        <UtensilsCrossed :size="64" />
       </div>
       <h3 class="empty-title">{{ searchQuery ? '未找到匹配的菜品' : '暂无菜品' }}</h3>
       <p class="empty-description">{{ searchQuery ? '请尝试其他关键词' : '点击上方按钮添加第一道菜品' }}</p>
@@ -406,11 +547,19 @@ onMounted(() => {
       :animation="200"
       ghost-class="ghost-dish"
       handle=".drag-handle-dish"
-      :disabled="!!searchQuery"
+      :disabled="editMode || !!searchQuery"
       @end="onDishesDragEnd"
     >
       <template #item="{ element: dish }">
         <div class="dish-item">
+          <div
+            v-if="editMode"
+            class="item-checkbox"
+            :class="{ checked: selectedIds.has(dish.id) }"
+            @click.stop="toggleSelect(dish.id)"
+          >
+            <Check v-if="selectedIds.has(dish.id)" :size="14" />
+          </div>
           <div class="drag-handle-dish">
             <GripVertical :size="16" />
           </div>
@@ -429,7 +578,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="dish-price">{{ dish.price }}元</div>
+          <div class="dish-price">{{ formatPrice(dish.price) }}</div>
 
           <div class="dish-status" :class="dish.status === 'on_sale' ? 'status-on' : 'status-off'">
             {{ dish.status === 'on_sale' ? '上架' : '下架' }}
@@ -485,8 +634,8 @@ onMounted(() => {
         </div>
 
         <div class="form-group">
-          <label>价格(元)</label>
-          <input v-model="formData.price" type="number" min="0" step="0.01" />
+          <label>价格</label>
+          <input v-model="formData.price" type="text" placeholder="请输入价格（如：25 或 时价）" />
         </div>
 
         <div class="form-group">
@@ -605,18 +754,53 @@ onMounted(() => {
       @confirm="confirmDeleteCategory"
       @cancel="showCategoryDeleteConfirm = false"
     />
+
+    <!-- Batch Delete Confirm Dialog -->
+    <ConfirmDialog
+      :show="showBatchDeleteConfirm"
+      :message="`确定要删除选中的 ${selectedIds.size} 项吗？`"
+      @confirm="confirmBatchDelete"
+      @cancel="showBatchDeleteConfirm = false"
+    />
+
+    <!-- Clear All Confirm Dialog -->
+    <ConfirmDialog
+      :show="showClearConfirm"
+      message="确定要清空全部菜品吗？此操作不可恢复。"
+      @confirm="confirmClearAll"
+      @cancel="showClearConfirm = false"
+    />
+
+    <!-- Batch Delete Progress Modal -->
+    <Modal :show="showProgressModal" title="正在删除" :closable="false" size="sm">
+      <div class="progress-content">
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" :style="{ width: (batchTotal ? (batchProgress / batchTotal * 100) : 0) + '%' }"></div>
+        </div>
+        <p class="progress-text">正在删除 {{ batchProgress }}/{{ batchTotal }}...</p>
+      </div>
+    </Modal>
   </div>
 </template>
 
 <style scoped>
 .dishes-page {
   max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 108px);
+}
+
+@media (min-width: 768px) {
+  .dishes-page {
+    min-height: calc(100vh - 48px);
+  }
 }
 
 .page-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   margin-bottom: var(--spacing-xl);
   gap: var(--spacing-md);
 }
@@ -625,8 +809,8 @@ onMounted(() => {
   position: relative;
   display: flex;
   align-items: center;
-  flex: 1;
-  max-width: 280px;
+  width: 280px;
+  justify-self: center;
 }
 
 .search-input-wrapper .search-icon {
@@ -651,6 +835,7 @@ onMounted(() => {
 .page-title {
   font-size: 1.5rem;
   font-weight: 600;
+  justify-self: start;
 }
 
 .category-tabs {
@@ -783,6 +968,7 @@ onMounted(() => {
 }
 
 .empty-state {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1130,14 +1316,171 @@ onMounted(() => {
   animation: spin 0.8s linear infinite;
 }
 
+.action-dropdown-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  justify-self: end;
+  min-width: 0;
+}
+
+.action-dropdown-wrapper .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.action-main-btn {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.action-toggle-btn {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  padding-left: var(--spacing-xs) !important;
+  padding-right: var(--spacing-xs) !important;
+  min-width: 32px;
+  justify-content: center;
+}
+
+.action-divider {
+  width: 1px;
+  align-self: stretch;
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.action-dropdown-menu {
+  position: absolute;
+  top: calc(100% + var(--spacing-xs));
+  right: 0;
+  min-width: 120px;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  padding: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+}
+
+.action-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color var(--transition-fast);
+  cursor: pointer;
+}
+
+.action-dropdown-item:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+.action-dropdown-danger {
+  color: var(--color-error);
+}
+
+.action-dropdown-danger:hover {
+  background-color: rgba(220, 38, 38, 0.08);
+}
+
+.edit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+  justify-self: end;
+  min-width: 0;
+}
+
+.progress-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: var(--color-primary);
+  transition: width var(--duration-fast) var(--ease-out);
+}
+
+.progress-text {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.select-all-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.875rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.selected-count {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.item-checkbox {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+  color: transparent;
+}
+
+.item-checkbox.checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
 @media (max-width: 640px) {
   .page-header {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+  }
+  .page-title {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .action-dropdown-wrapper,
+  .edit-toolbar {
+    grid-column: 2;
+    grid-row: 1;
   }
   .search-input-wrapper {
-    order: 3;
-    flex-basis: 100%;
-    max-width: 100%;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    justify-self: stretch;
   }
 
   .form-grid {

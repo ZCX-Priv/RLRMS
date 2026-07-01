@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, defineAsyncComponent, type ComponentPublicInstance } from 'vue'
+import { ref, computed, onMounted, nextTick, watch, defineAsyncComponent, type ComponentPublicInstance } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { api } from '@/api'
 import { useCartStore } from '@/stores/cart'
 import { useAppStore } from '@/stores/app'
 import { useClientAuthStore } from '@/stores/clientAuth'
 import type { Category, Dish } from '@/types'
+import { formatPrice } from '@/utils/format'
 import ClientLayout from '@/client/components/ClientLayout.vue'
 import DishCard from '@/client/components/DishCard.vue'
 import QuantityControl from '@/shared/components/QuantityControl.vue'
 import Skeleton from '@/shared/components/Skeleton.vue'
 
 const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
-import { Search, ShoppingCart, Trash2, ChevronUp, ChevronDown, X } from 'lucide-vue-next'
+import { Search, ShoppingCart, Trash2, ChevronUp, ChevronDown, X, Frown } from 'lucide-vue-next'
 
 const router = useRouter()
 const cartStore = useCartStore()
@@ -102,6 +103,10 @@ function handleDishClick(dish: Dish) {
 }
 
 function handleConfirmOrder() {
+  if (cartStore.addDishOrderId && !cartStore.hasCartChanged) {
+    appStore.showToast('菜单没有变动哦~', 'info')
+    return
+  }
   router.push('/order/confirm')
 }
 
@@ -194,8 +199,37 @@ onMounted(async () => {
     }
   }
   
-  // 登录完成后再检查桌位（仅首次进入页面时检测，从其他路由返回时跳过）
-  if (clientAuthStore.isAuthenticated && !isReturningFromRoute) {
+  // 等待购物车从 IndexedDB 恢复完成，避免与 restore() 产生竞态
+  if (!cartStore.restored) {
+    await new Promise<void>((resolve) => {
+      const unwatch = watch(() => cartStore.restored, (val) => {
+        if (val) { unwatch(); resolve() }
+      })
+    })
+  }
+
+  // 登录完成后：检测最近订单，若为活跃状态则自动进入修改模式
+  let hasActiveOrder = false
+  if (clientAuthStore.isAuthenticated) {
+    try {
+      const phone = clientAuthStore.user?.phone || undefined
+      const res = await api.getOrders(phone)
+      if (res.data.length > 0) {
+        // 取最近一条订单（已按 created_at DESC 排序）
+        const latestOrder = res.data[0]
+        if (latestOrder && (latestOrder.status === 'pending' || latestOrder.status === 'confirmed')) {
+          cartStore.setItemsFromOrder(latestOrder.items)
+          cartStore.addDishOrderId = latestOrder.id
+          hasActiveOrder = true
+        }
+      }
+    } catch {
+      // 查询失败时不影响正常流程
+    }
+  }
+
+  // 检查桌位（仅首次进入页面时检测，从其他路由返回时跳过，加菜模式下跳过）
+  if (clientAuthStore.isAuthenticated && !isReturningFromRoute && !hasActiveOrder) {
     const period: '中午' | '晚上' = new Date().getHours() >= 13 ? '晚上' : '中午'
     try {
       const res = await api.getAvailableTablesFor(period)
@@ -207,6 +241,7 @@ onMounted(async () => {
       // 查询失败时不影响正常流程
     }
   }
+
 })
 </script>
 
@@ -306,7 +341,7 @@ onMounted(async () => {
                     <span v-if="item.spec" class="item-spec">({{ item.spec }})</span>
                   </div>
                   <div class="item-actions">
-                    <span class="item-price">{{ item.dish.price }}元</span>
+                    <span class="item-price">{{ formatPrice(item.dish.price) }}</span>
                     <QuantityControl
                       :model-value="item.quantity"
                       size="sm"
@@ -333,7 +368,7 @@ onMounted(async () => {
             <ChevronUp v-else :size="16" class="expand-icon" />
           </div>
           <button class="btn btn-primary confirm-btn" :disabled="cartStore.items.length === 0" @click="handleConfirmOrder">
-            确认订单
+            {{ cartStore.addDishOrderId ? '修改订单' : '确认订单' }}
           </button>
         </div>
       </div>
@@ -347,9 +382,11 @@ onMounted(async () => {
             <button class="table-full-close" @click="dismissTableFullModal">
               <X :size="18" />
             </button>
+            <div class="table-full-icon">
+              <Frown :size="48" />
+            </div>
             <h3 class="table-full-title">非常抱歉</h3>
             <p class="table-full-text">{{ tableFullPeriod }}的桌位已满</p>
-            <button class="btn btn-primary table-full-btn" @click="dismissTableFullModal">加菜</button>
           </div>
         </div>
       </Transition>
@@ -653,6 +690,7 @@ onMounted(async () => {
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);
   cursor: pointer;
+  flex: 1;
 }
 
 .expand-icon {
@@ -838,12 +876,13 @@ onMounted(async () => {
 .table-full-text {
   font-size: 0.9rem;
   color: var(--color-text-secondary);
-  margin-bottom: var(--spacing-xl);
 }
 
-.table-full-btn {
-  width: 100%;
-  padding: var(--spacing-md);
+.table-full-icon {
+  display: flex;
+  justify-content: center;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-md);
 }
 
 .modal-fade-enter-active {

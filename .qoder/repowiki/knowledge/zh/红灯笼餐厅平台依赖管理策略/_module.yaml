@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: dependency_management
+title: 红灯笼餐厅平台依赖管理策略
+scope: []
+source_files:
+    - package.json
+    - package-lock.json
+    - Dockerfile
+    - scripts/build-production.mjs
+    - server/tsconfig.json
+    - tsconfig.json
+depends_on: []
+related_to: []
