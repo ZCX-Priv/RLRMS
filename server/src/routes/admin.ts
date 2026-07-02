@@ -1478,14 +1478,18 @@ const uploadZip = multer({
 interface ImportManifest {
   version?: string
   exportedAt?: string
-  tables?: number
-  dishes?: number
-  categories?: number
-  orders?: number
-  inventory?: number
-  settings?: number
-  users?: number
-  orderModifications?: number
+  counts?: {
+    users?: number
+    orders?: number
+    orderItems?: number
+    orderModifications?: number
+    tables?: number
+    dishes?: number
+    categories?: number
+    inventory?: number
+    settings?: number
+    images?: number
+  }
 }
 
 /**
@@ -1604,8 +1608,8 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
         const categories = JSON.parse(categoriesContent)
         for (const category of categories) {
           run(
-            'INSERT INTO categories (id, name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-            [category.id, category.name, category.sort_order || 0, category.created_at || null, category.updated_at || null]
+            'INSERT INTO categories (id, name, sort_order, created_at) VALUES (?, ?, ?, ?)',
+            [category.id, category.name, category.sort_order || 0, category.created_at || null]
           )
           stats.categories++
         }

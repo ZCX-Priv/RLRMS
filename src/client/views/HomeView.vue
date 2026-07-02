@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch, defineAsyncComponent, type ComponentPublicInstance } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent, type ComponentPublicInstance } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { api } from '@/api'
 import { useCartStore } from '@/stores/cart'
@@ -30,6 +30,10 @@ const showTableFullModal = ref(false)
 const tableFullPeriod = ref<'中午' | '晚上'>('中午')
 const contentRef = ref<HTMLElement | null>(null)
 const sectionRefs = ref<Record<string, Element | null>>({})
+
+// Scroll spy 状态
+let isScrollingProgrammatically = false
+let rafId: number | null = null
 
 const dishesByCategory = computed(() => {
   const grouped: Record<string, Dish[]> = {}
@@ -130,12 +134,36 @@ function scrollToCategory(categoryName: string) {
     const contentRect = contentRef.value.getBoundingClientRect()
     const sectionRect = section.getBoundingClientRect()
     const scrollTop = contentRef.value.scrollTop + sectionRect.top - contentRect.top - 10
+    isScrollingProgrammatically = true
     contentRef.value.scrollTo({
       top: scrollTop,
       behavior: 'smooth'
     })
     selectedCategory.value = categoryName
+    setTimeout(() => { isScrollingProgrammatically = false }, 600)
   }
+}
+
+function onContentScroll() {
+  if (isScrollingProgrammatically) return
+  if (rafId !== null) return
+  rafId = requestAnimationFrame(() => {
+    rafId = null
+    if (!contentRef.value) return
+    const contentTop = contentRef.value.getBoundingClientRect().top
+    let currentCategory = ''
+    for (const [name, el] of Object.entries(sectionRefs.value)) {
+      if (!el) continue
+      const rect = el.getBoundingClientRect()
+      // section 顶部已滚过内容区顶部（加 20px 阈值）
+      if (rect.top - contentTop <= 20) {
+        currentCategory = name
+      }
+    }
+    if (currentCategory && currentCategory !== selectedCategory.value) {
+      selectedCategory.value = currentCategory
+    }
+  })
 }
 
 function setSectionRef(el: Element | ComponentPublicInstance | null, categoryName: string) {
@@ -228,6 +256,9 @@ onMounted(async () => {
     }
   }
 
+  // 注册滚动监听（scroll spy）
+  contentRef.value?.addEventListener('scroll', onContentScroll, { passive: true })
+
   // 检查桌位（仅首次进入页面时检测，从其他路由返回时跳过，加菜模式下跳过）
   if (clientAuthStore.isAuthenticated && !isReturningFromRoute && !hasActiveOrder) {
     const period: '中午' | '晚上' = new Date().getHours() >= 13 ? '晚上' : '中午'
@@ -242,6 +273,11 @@ onMounted(async () => {
     }
   }
 
+})
+
+onUnmounted(() => {
+  contentRef.value?.removeEventListener('scroll', onContentScroll)
+  if (rafId !== null) cancelAnimationFrame(rafId)
 })
 </script>
 

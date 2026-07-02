@@ -649,6 +649,14 @@ async function handleImport() {
               <span>订单数量</span>
               <span>{{ importPreview.counts.orders }}</span>
             </div>
+            <div class="stat-item" v-if="importPreview.counts.orderItems">
+              <span>订单项数量</span>
+              <span>{{ importPreview.counts.orderItems }}</span>
+            </div>
+            <div class="stat-item" v-if="importPreview.counts.orderModifications">
+              <span>订单修改记录</span>
+              <span>{{ importPreview.counts.orderModifications }}</span>
+            </div>
             <div class="stat-item" v-if="importPreview.counts.users">
               <span>用户数量</span>
               <span>{{ importPreview.counts.users }}</span>

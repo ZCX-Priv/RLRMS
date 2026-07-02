@@ -1,18 +1,27 @@
 <script setup lang="ts">
-import { ref, computed, type Component } from 'vue'
+import { ref, computed, defineAsyncComponent, type Component } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '@/api'
+import { useAppStore } from '@/stores/app'
 import {
   Table2, Play, Send, Trash2, Hash, ChevronRight, Copy, AlertCircle, CheckCircle2,
   Database, RefreshCw, LayoutDashboard, Armchair, UtensilsCrossed, FolderOpen,
   ClipboardList, Package, UserCircle, Settings, Upload, Download
 } from 'lucide-vue-next'
 
+const ConfirmDialog = defineAsyncComponent(() => import('@/shared/components/ConfirmDialog.vue'))
+
 // ===== Tab 切换（由路由驱动） =====
 const route = useRoute()
+const appStore = useAppStore()
 const activeTab = computed<'sql' | 'api'>(() => {
   return route.path === '/admin/debug/api' ? 'api' : 'sql'
 })
+
+// ===== 清空表确认弹窗状态 =====
+const showClearConfirm = ref(false)
+const pendingClearTable = ref('')
+const clearConfirmMessage = computed(() => `确定要清空表 "${pendingClearTable.value}" 的所有数据吗？此操作不可撤销！`)
 
 // ===== SQL Tab 状态 =====
 const sqlInput = ref('SELECT * FROM sqlite_master WHERE type="table"')
@@ -211,23 +220,29 @@ async function getTableRowCount(tableName: string) {
     const res = await api.debugQuery(`SELECT COUNT(*) as count FROM "${tableName}"`)
     if (res.data.rows.length > 0) {
       const count = (res.data.rows[0] as Record<string, unknown>).count
-      alert(`表 "${tableName}" 共有 ${count} 行数据`)
+      appStore.showToast(`表 "${tableName}" 共有 ${count} 行数据`, 'info')
     }
   } catch (e: unknown) {
     console.error('Failed to count rows:', e)
   }
 }
 
-async function clearTableData(tableName: string) {
-  if (!confirm(`确定要清空表 "${tableName}" 的所有数据吗？此操作不可撤销！`)) return
+function clearTableData(tableName: string) {
+  pendingClearTable.value = tableName
+  showClearConfirm.value = true
+}
+
+async function confirmClearTable() {
+  const tableName = pendingClearTable.value
+  showClearConfirm.value = false
   try {
     const res = await api.debugQuery(`DELETE FROM "${tableName}"`)
-    alert(`已删除 ${res.data.changes} 行数据`)
+    appStore.showToast(`已删除 ${res.data.changes} 行数据`, 'success')
     if (selectedTable.value === tableName) {
       await loadTableData()
     }
   } catch (e: unknown) {
-    alert(e instanceof Error ? e.message : '清空失败')
+    appStore.showToast(e instanceof Error ? e.message : '清空失败', 'error')
   }
 }
 
@@ -690,6 +705,16 @@ const ResizableResultTable = defineComponent({
         </div>
       </div>
     </div>
+
+    <!-- 清空表确认弹窗 -->
+    <ConfirmDialog
+      :show="showClearConfirm"
+      title="清空数据表"
+      :message="clearConfirmMessage"
+      :confirm-text="'清空'"
+      @confirm="confirmClearTable"
+      @cancel="showClearConfirm = false"
+    />
   </div>
 </template>
 
