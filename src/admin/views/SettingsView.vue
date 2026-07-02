@@ -372,6 +372,12 @@ async function handleImport() {
         </div>
         <div class="form-group">
           <label>特色标签</label>
+          <div class="tag-pills">
+            <span v-for="(tag, i) in featuresList" :key="i" class="tag-pill">
+              {{ tag }}
+              <button type="button" @click="removeFeature(i)"><X :size="12" /></button>
+            </span>
+          </div>
           <div class="tag-add-row">
             <input
               v-model="newFeature"
@@ -383,12 +389,6 @@ async function handleImport() {
               <Plus :size="14" />
               添加
             </button>
-          </div>
-          <div class="tag-pills">
-            <span v-for="(tag, i) in featuresList" :key="i" class="tag-pill">
-              {{ tag }}
-              <button type="button" @click="removeFeature(i)"><X :size="12" /></button>
-            </span>
           </div>
         </div>
         <div class="form-actions">
@@ -880,7 +880,6 @@ async function handleImport() {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs);
-  margin-top: var(--spacing-sm);
 }
 
 .tag-pill {
@@ -917,6 +916,7 @@ async function handleImport() {
 .tag-add-row {
   display: flex;
   gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
 }
 
 .tag-add-row input {
