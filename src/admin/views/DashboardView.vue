@@ -1022,6 +1022,7 @@ function handleClickOutside(e: MouseEvent) {
 
 .filter-select {
   padding: var(--spacing-xs) var(--spacing-md);
+  padding-right: 2.5rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background-color: var(--color-bg-primary);

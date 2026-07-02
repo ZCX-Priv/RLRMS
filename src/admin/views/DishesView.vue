@@ -54,6 +54,11 @@ const categoryToDelete = ref<string>('')
 
 const allTags = computed(() => [...defaultTags, ...customTags.value])
 
+const defaultSpecs = ['大份', '中份', '小份']
+const customSpecs = ref<string[]>([])
+const newSpecName = ref('')
+const allSpecs = computed(() => [...defaultSpecs, ...customSpecs.value])
+
 const filteredDishes = computed({
   get: () => {
     let result = dishes.value
@@ -338,6 +343,34 @@ function removeCustomTag(tag: string) {
     const formTagIndex = formData.value.tags.indexOf(tag)
     if (formTagIndex >= 0) {
       formData.value.tags.splice(formTagIndex, 1)
+    }
+  }
+}
+
+function toggleSpec(spec: string) {
+  const index = formData.value.specs.indexOf(spec)
+  if (index >= 0) {
+    formData.value.specs.splice(index, 1)
+  } else {
+    formData.value.specs.push(spec)
+  }
+}
+
+function addCustomSpec() {
+  const spec = newSpecName.value.trim()
+  if (spec && !allSpecs.value.includes(spec)) {
+    customSpecs.value.push(spec)
+    newSpecName.value = ''
+  }
+}
+
+function removeCustomSpec(spec: string) {
+  const index = customSpecs.value.indexOf(spec)
+  if (index >= 0) {
+    customSpecs.value.splice(index, 1)
+    const formSpecIndex = formData.value.specs.indexOf(spec)
+    if (formSpecIndex >= 0) {
+      formData.value.specs.splice(formSpecIndex, 1)
     }
   }
 }
@@ -701,13 +734,42 @@ onUnmounted(() => {
         </div>
 
         <div class="form-group full-width">
-          <label>规格 (用逗号分隔)</label>
-          <input
-            v-model="formData.specs"
-            type="text"
-            placeholder="大份,中份,小份"
-            @input="formData.specs = ($event.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean)"
-          />
+          <label>规格</label>
+          <div class="tags-input">
+            <button
+              v-for="spec in defaultSpecs"
+              :key="spec"
+              class="tag-btn"
+              :class="{ 'tag-btn-active': formData.specs.includes(spec) }"
+              @click="toggleSpec(spec)"
+            >
+              {{ spec }}
+            </button>
+            <button
+              v-for="spec in customSpecs"
+              :key="spec"
+              class="tag-btn tag-btn-custom"
+              :class="{ 'tag-btn-active': formData.specs.includes(spec) }"
+              @click="toggleSpec(spec)"
+            >
+              {{ spec }}
+              <span class="remove-tag" @click.stop="removeCustomSpec(spec)">
+                <X :size="12" />
+              </span>
+            </button>
+          </div>
+          <div class="add-tag-row">
+            <input
+              v-model="newSpecName"
+              type="text"
+              placeholder="添加自定义规格"
+              class="add-tag-input"
+              @keyup.enter="addCustomSpec"
+            />
+            <button type="button" class="btn btn-sm btn-secondary" @click="addCustomSpec">
+              添加
+            </button>
+          </div>
         </div>
       </div>
 
@@ -847,9 +909,7 @@ onUnmounted(() => {
 }
 
 .category-tabs-draggable {
-  display: flex;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
+  display: contents;
 }
 
 .category-tab {
@@ -1177,6 +1237,10 @@ onUnmounted(() => {
   background-color: var(--color-bg-primary);
 }
 
+.form-group select {
+  padding-right: 2.5rem;
+}
+
 .form-group textarea {
   resize: vertical;
 }
@@ -1192,6 +1256,9 @@ onUnmounted(() => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
   font-size: 0.875rem;
+  background-color: var(--color-bg-secondary);
+  cursor: pointer;
+  user-select: none;
   transition: all var(--transition-fast);
 }
 

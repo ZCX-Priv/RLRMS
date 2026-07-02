@@ -609,6 +609,7 @@ onUnmounted(() => {
 .status-select {
   flex: 1;
   padding: var(--spacing-xs) var(--spacing-sm);
+  padding-right: 2.5rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: 0.75rem;

@@ -27,6 +27,25 @@ function safeJsonParse<T>(jsonString: string | null | undefined, defaultValue: T
 }
 
 /**
+ * 将 tags/specs 值安全地序列化为 JSON 数组字符串
+ * 防止双重序列化：若已经是字符串，则验证并直接使用
+ */
+function safeJsonStringifyArray(value: unknown): string {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? value : '[]'
+    } catch {
+      return '[]'
+    }
+  }
+  if (Array.isArray(value)) {
+    return JSON.stringify(value)
+  }
+  return '[]'
+}
+
+/**
  * JWT Payload 类型定义
  * 用于类型安全的 token 解码
  */
@@ -393,7 +412,7 @@ adminRouter.post('/dishes', requireAuth, (req, res) => {
     run(`
       INSERT INTO dishes (id, name, price, category_id, description, tags, specs, image_url)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [id, name, price, category_id || null, description || '', JSON.stringify(tags || []), JSON.stringify(specs || []), image_url || null])
+    `, [id, name, price, category_id || null, description || '', safeJsonStringifyArray(tags), safeJsonStringifyArray(specs), image_url || null])
     
     cacheInvalidate(CACHE_KEYS.DISHES_HOME)
     cacheInvalidate(CACHE_KEYS.DISHES_LIST)
@@ -479,7 +498,7 @@ adminRouter.put('/dishes/:id', requireAuth, (req, res) => {
       UPDATE dishes 
       SET name = ?, price = ?, category_id = ?, description = ?, tags = ?, specs = ?, image_url = ?, status = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [name ?? currentDish?.name ?? '', price ?? currentDish?.price ?? 0, category_id || null, description || '', JSON.stringify(tags || []), JSON.stringify(specs || []), image_url || null, status || 'on_sale', id])
+    `, [name ?? currentDish?.name ?? '', price ?? currentDish?.price ?? 0, category_id || null, description || '', safeJsonStringifyArray(tags), safeJsonStringifyArray(specs), image_url || null, status || 'on_sale', id])
     
     // 如果图片发生变化，删除旧图片（如果未被其他菜品使用）
     if (imageChanged && oldImageUrl) {
@@ -1643,8 +1662,8 @@ adminRouter.post('/import', requireAuth, uploadZip.single('file'), (req, res) =>
               dish.price,
               dish.category_id || null,
               dish.description || '',
-              JSON.stringify(dish.tags || []),
-              JSON.stringify(dish.specs || []),
+              safeJsonStringifyArray(dish.tags),
+              safeJsonStringifyArray(dish.specs),
               dish.image_url || null,
               dish.status || 'on_sale',
               dish.sort_order || 0,

@@ -713,6 +713,10 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
 }
 
+.form-group select {
+  padding-right: 2.5rem;
+}
+
 .form-group input:disabled {
   background-color: var(--color-bg-tertiary);
   color: var(--color-text-muted);

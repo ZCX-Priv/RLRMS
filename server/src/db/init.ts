@@ -2,6 +2,28 @@ import { initDatabase, run, get, all, beginBatch, endBatch } from './index.js'
 import bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
 
+/**
+ * 将 tags/specs 列的值规范化为合法的 JSON 数组字符串
+ * 处理：null/空字符串/双重序列化的 '"[]"'/非法 JSON
+ */
+function normalizeJsonArray(value: string | null | undefined): string {
+  if (!value || value.trim() === '') return '[]'
+  try {
+    const parsed = JSON.parse(value)
+    if (Array.isArray(parsed)) return JSON.stringify(parsed)
+    // 双重序列化：解析后是字符串，再解析一次
+    if (typeof parsed === 'string') {
+      try {
+        const inner = JSON.parse(parsed)
+        if (Array.isArray(inner)) return JSON.stringify(inner)
+      } catch { /* ignore */ }
+    }
+    return '[]'
+  } catch {
+    return '[]'
+  }
+}
+
 export async function initializeDatabase() {
   await initDatabase()
 
@@ -211,6 +233,26 @@ export async function initializeDatabase() {
   `)
   if (backfillResult.changes > 0) {
     console.log(`Backfilled user_id for ${backfillResult.changes} orders`)
+  }
+
+  // === 迁移：修复 dishes 表 tags/specs 列的异常 JSON 值 ===
+  // 幂等：仅处理 NULL、空字符串、双重序列化的记录
+  const badDishes = all<{ id: string; tags: string; specs: string }>(
+    `SELECT id, tags, specs FROM dishes
+     WHERE tags IS NULL OR tags = ''
+        OR specs IS NULL OR specs = ''
+        OR tags LIKE '%"[%]"%'
+        OR specs LIKE '%"[%]"%'`
+  )
+  if (badDishes.length > 0) {
+    beginBatch()
+    for (const dish of badDishes) {
+      const fixedTags = normalizeJsonArray(dish.tags)
+      const fixedSpecs = normalizeJsonArray(dish.specs)
+      run('UPDATE dishes SET tags = ?, specs = ? WHERE id = ?', [fixedTags, fixedSpecs, dish.id])
+    }
+    endBatch()
+    console.log(`Fixed tags/specs for ${badDishes.length} dishes`)
   }
 
   // End batch operation and save database once
